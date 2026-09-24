@@ -19,6 +19,7 @@ import { loadLedger, saveLedger, mergeRun } from "../lib/ledger.mjs";
 import { importWorkbook } from "../lib/excel.mjs";
 import { runSweep } from "../lib/sweep.mjs";
 import { closeBrowser } from "../lib/browser.mjs";
+import { classifySector } from "../lib/sector.mjs";
 
 const args = process.argv.slice(2);
 const SWEEP = !args.includes("--no-sweep");
@@ -46,6 +47,8 @@ for (const id of tenantIds()) {
     }
   }
   const ledger = loadLedger(ROOT, id);
+  // Findings from earlier runs get the buyer's industry too.
+  for (const f of ledger.findings) if (!f.sector) f.sector = classifySector({ buyer: f.buyer, source: f.channel });
 
   // 2. committed assignments
   const sheet = path.join(ROOT, "assignments", `${id}.xlsx`);

@@ -240,7 +240,7 @@ function renderFindings() {
           f.changed ? h("span", { class: "tag changed", title: f.changed.what.join("; ") }, "changed") : null,
           (() => { const g = goNoGo(f.goNoGo); return g.answered ? h("span", { class: `tag gng ${g.verdict}` }, `go/no-go ${g.pct}%`) : null; })(),
           ...(f.competitors ?? []).map((c) => h("span", { class: "tag" }, `vs ${c}`)))),
-      h("td", {}, industryName(f.industry)),
+      h("td", {}, h("span", { title: sectorOf(f) ? `Inferred: ${sectorOf(f).basis}` : "" }, sectorOf(f)?.label ?? industryName(f.industry))),
       h("td", {}, f.closeDate ? h("span", { class: `due ${d < 0 ? "over" : d <= 14 ? "soon" : ""}` }, f.closeDate, h("br"), d < 0 ? "closed" : `${d} days`) : h("span", { class: "unassigned" }, "not published")),
       h("td", {}, statusSelect(f)),
       h("td", {}, assigneeInput(f.assignee, f.suggestedAssignee ? `suggest: ${f.suggestedAssignee}` : "unassigned", (v) => mutate(() => api("PATCH", `/api/findings/${f.id}`, { assignee: v, rev: f.rev }), v ? `Assigned to ${v}` : "Unassigned"))),
@@ -477,7 +477,11 @@ async function fetchLedgerFor(tid) {
 
 function setupSweepForm() {
   const m = state.meta;
-  $("#sIndustry").replaceChildren(h("option", { value: "" }, "All industries"), ...m.industries.map((i) => h("option", { value: i.id }, `${i.name}${i.status === "proven" ? "" : ` [${i.status}]`}`)));
+  // Industry = who is buying (from the publishing organization), plus the logistics markets.
+  const logistics = m.industries.filter((i) => i.id.startsWith("logistics"));
+  $("#sIndustry").replaceChildren(h("option", { value: "" }, "All industries"),
+    ...m.sectors.filter((x) => x.id !== "other").map((x) => h("option", { value: `sector:${x.id}` }, x.label)),
+    ...logistics.map((i) => h("option", { value: `pack:${i.id}` }, `${i.name}${i.status === "proven" ? "" : ` [${i.status}]`}`)));
   $("#sGeo").replaceChildren(...m.geographies.map((g) => h("option", { value: g.id }, g.label)));
   $("#sCap").replaceChildren(h("option", { value: "" }, "All capabilities"), ...m.capabilities.map((c) => h("option", { value: c.id }, c.label)));
   $("#sDays").replaceChildren(...m.dateRanges.map((d) => h("option", { value: d.id, selected: d.id === "30" }, d.label)));
@@ -498,13 +502,22 @@ function sweepParams() {
   return p;
 }
 
+const sectorOf = (f) => f.sector ?? R().classifySector({ buyer: f.buyer, source: f.channel });
+function industryMatch(f, sel) {
+  if (!sel) return true;
+  const [kind, id] = sel.split(":");
+  if (kind === "pack") return f.industry === id;
+  if (kind === "sector") return sectorOf(f)?.id === id;
+  return f.industry === sel; // older saved choice
+}
+
 function clientFilter(findings, p) {
   const geo = state.meta.geographies.find((g) => g.id === p.geography)?.countries ?? ["CA", "US"];
   const days = state.meta.dateRanges.find((d) => d.id === p.days)?.days;
   const since = days ? new Date(Date.now() - days * 86400000).toISOString().slice(0, 10) : null;
   const today = new Date().toISOString().slice(0, 10);
   return findings.filter((f) =>
-    (!p.industry || p.industry === "any" || f.industry === p.industry) &&
+    industryMatch(f, p.industry) &&
     (!f.country || geo.includes(f.country)) &&
     (!p.capability || (f.capabilities ?? []).some((c) => c.id === p.capability)) &&
     (!since || !f.publishedDate || f.publishedDate >= since) &&
@@ -531,9 +544,13 @@ async function runSearch() {
   btn.disabled = true; btn.textContent = "Sweeping…";
   try {
     const days = state.meta.dateRanges.find((d) => d.id === p.days)?.days;
-    const r = await fetch("/api/search?tenant=all", { method: "POST", headers: { "X-RFP-Dashboard": "1", "content-type": "application/json" }, body: JSON.stringify({ ...p, days }) }).then(async (x) => { const j = await x.json(); if (!x.ok) throw new Error(j.error); return j; });
+    // Map the chosen buyer industry to the search pack: K-12 and nonprofit have their own; the rest search capability-led.
+    const [kind, id] = (p.industry || "").split(":");
+    const pack = kind === "pack" ? id : kind === "sector" ? state.meta.sectors.find((x) => x.id === id)?.pack : "";
+    const r = await fetch("/api/search?tenant=all", { method: "POST", headers: { "X-RFP-Dashboard": "1", "content-type": "application/json" }, body: JSON.stringify({ ...p, industry: pack || "", days }) }).then(async (x) => { const j = await x.json(); if (!x.ok) throw new Error(j.error); return j; });
     state.allLedger = await fetchLedgerFor(GENERAL);
-    state.sweepIds = new Set(r.ids);
+    // Keep only what matches the chosen buyer industry.
+    state.sweepIds = new Set(state.allLedger.findings.filter((f) => r.ids.includes(f.id) && industryMatch(f, p.industry)).map((f) => f.id));
     state.sweepLow = r.low;
     if (r.gaps) toast(`${r.gaps} source(s) could not be read. See Coverage & runs.`);
   } catch (e) { toast(e.message, true); }
@@ -583,7 +600,7 @@ function renderSweepResults() {
           h("td", { class: "title" }, f.url ? h("a", { href: f.url, target: "_blank", rel: "noopener noreferrer" }, f.title) : f.title,
             h("div", { class: "buyer" }, (f.capabilities ?? []).slice(0, 2).map((c) => h("span", { class: "tag" }, c.label)), f.noticeType ? h("span", { class: "tag" }, f.noticeType) : null)),
           h("td", {}, f.buyer || "—"),
-          h("td", {}, (state.meta.industries.find((i) => i.id === f.industry)?.name ?? f.industry).replace(/ \/.*$/, "")),
+          h("td", {}, (() => { const sc = sectorOf(f); return h("span", { title: sc ? `Inferred: ${sc.basis}` : "" }, sc?.label ?? "—"); })()),
           h("td", {}, f.closeDate ? h("span", { class: `due ${d < 0 ? "over" : d <= 14 ? "soon" : ""}` }, f.closeDate, h("br"), `${d} days`) : h("span", { class: "unassigned" }, "not stated")),
           h("td", { class: "num" }, f.estimatedValue ? money(f.estimatedValue) : "—"),
           h("td", {}, f.assignee || h("span", { class: "unassigned" }, f.team?.opportunityOwner ? `suggest: ${f.team.opportunityOwner}` : "unassigned")),
@@ -595,12 +612,13 @@ function renderSweepResults() {
 function emptySweep(p) {
   if (!state.sweepIds) return h("p", { class: "empty" }, "Pick what you are looking for and press Run RFP Sweep.");
   const all = state.allLedger?.findings ?? [];
-  const label = (k, v) => ({ industry: v ? state.meta.industries.find((i) => i.id === v)?.name : "All industries", geography: state.meta.geographies.find((g) => g.id === v)?.label, capability: v ? state.meta.capabilities.find((c) => c.id === v)?.label : "All capabilities", days: state.meta.dateRanges.find((d) => d.id === v)?.label })[k];
+  const label = (k, v) => ({ industry: v ? (state.meta.sectors.find((x) => `sector:${x.id}` === v)?.label ?? state.meta.industries.find((i) => `pack:${i.id}` === v)?.name ?? v) : "All industries", geography: state.meta.geographies.find((g) => g.id === v)?.label, capability: v ? state.meta.capabilities.find((c) => c.id === v)?.label : "All capabilities", days: state.meta.dateRanges.find((d) => d.id === v)?.label })[k];
   const tries = [
     ["capability", ""], ["days", "any"], ["geography", "na"], ["industry", ""],
   ].filter(([k, v]) => p[k] !== v).map(([k, v]) => ({ k, v, n: clientFilter(all, { ...p, [k]: v }).length })).filter((t) => t.n > 0);
   const ids = { industry: "sIndustry", geography: "sGeo", capability: "sCap", days: "sDays" };
-  const pack = state.meta.packs.find((x) => x.id === p.industry);
+  const [pk, pid] = (p.industry || "").split(":");
+  const pack = state.meta.packs.find((x) => x.id === (pk === "pack" ? pid : state.meta.sectors.find((s) => s.id === pid)?.pack));
   const geo = state.meta.geographies.find((g) => g.id === p.geography)?.countries ?? ["CA", "US"];
   const portals = (pack?.channels ?? []).map((c) => state.meta.channels.find((x) => x.id === c.ref)).filter((c) => c && c.render !== "server" && (!c.country || geo.includes(c.country)));
   return h("div", { class: "card empty-sweep" },
@@ -652,7 +670,7 @@ document.addEventListener("click", (e) => { if (e.target?.id === "sWorkspace" &&
 
 function wsMeta(ws) {
   const f = ws.finding ?? {};
-  return { buyer: ws.buyer ?? f.buyer, publishedDate: f.publishedDate, closeDate: f.closeDate, estimatedValue: f.estimatedValue ? money(f.estimatedValue) : null, url: ws.url ?? f.url, channel: f.channel, capabilities: f.capabilities ?? R().matchCapabilities(ws.title, ws.text).slice(0, 4) };
+  return { sector: f.sector ?? (ws.buyer ? R().classifySector({ buyer: ws.buyer, source: f.channel }) : null), buyer: ws.buyer ?? f.buyer, publishedDate: f.publishedDate, closeDate: f.closeDate, estimatedValue: f.estimatedValue ? money(f.estimatedValue) : null, url: ws.url ?? f.url, channel: f.channel, capabilities: f.capabilities ?? R().matchCapabilities(ws.title, ws.text).slice(0, 4) };
 }
 
 function runAnalyze(ws, { silent } = {}) {

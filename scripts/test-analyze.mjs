@@ -15,6 +15,7 @@ import { parseCsv, extractPostings } from "../lib/extract.mjs";
 import { score } from "../lib/score.mjs";
 import { browserBundle } from "../lib/bundle.mjs";
 import { industryIds, loadPack, loadTenant, tenantIds } from "../lib/config.mjs";
+import { classifySector } from "../lib/sector.mjs";
 
 let fails = 0, passes = 0;
 const a = (name, cond) => { if (cond) passes++; else { fails++; console.log(`FAIL: ${name}`); } };
@@ -155,6 +156,18 @@ vm.createContext(ctx);
 vm.runInContext(browserBundle(), ctx);
 a("bundle: browser build exposes the same steps", ["analyzeRfp", "qualify", "draftAnswers", "buildProposal", "redTeam", "buildAnalysisWorkbook", "matchCapabilities"].every((k) => typeof ctx.window.RFP[k] === "function"));
 a("bundle: browser result equals Node result", ctx.window.RFP.analyzeRfp({ text: RFP, packs, now: NOW }).scores.overall === analyzeRfp({ text: RFP, packs, now: NOW }).scores.overall);
+
+// ------------------------------------------------------------------ buyer industry
+const sec = (buyer, source = "ca.agg.merx", buyerType = "") => classifySector({ buyer, buyerType, source })?.id;
+a("sector: city, town, municipality", ["City of Coquitlam", "Town of Morinville", "Municipality of Jasper", "Nova Scotia Federation of Municipalities"].every((b) => sec(b) === "municipal"));
+a("sector: school district is K-12", sec("Surrey School District 36") === "k12" && sec("Conseil scolaire Viamonde") === "k12");
+a("sector: university is higher education", sec("Carleton University") === "higher-ed");
+a("sector: association is nonprofit", sec("Human Resources Professionals Association (HRPA)") === "nonprofit");
+a("sector: SAM defence office by parent org", sec("W6QK ACC WVA", "us.federal.sam.search", "DEPT OF DEFENSE") === "defence");
+a("sector: SAM default is US federal", sec("SOME OFFICE", "us.federal.sam.search") === "federal-us");
+a("sector: CanadaBuys federal department", sec("Shared Services Canada (SSC)", "ca.federal.canadabuys.open") === "federal-ca");
+a("sector: always labelled inferred with its basis", classifySector({ buyer: "City of Coquitlam" }).inferred === true && /City of/.test(classifySector({ buyer: "City of Coquitlam" }).basis));
+a("sector: no buyer, no guess", classifySector({}) === null);
 
 console.log(fails ? `\n${fails} FAILED, ${passes} passed` : `\nall ${passes} analysis assertions passed`);
 process.exit(fails ? 1 : 0);
