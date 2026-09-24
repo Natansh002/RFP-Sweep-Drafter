@@ -23,6 +23,16 @@
   ],
   "channels": [
     {
+      "ref": "ca.federal.canadabuys.open",
+      "priority": 1,
+      "note": "Structured open data with full descriptions."
+    },
+    {
+      "ref": "us.federal.sam.search",
+      "priority": 1,
+      "note": "Searched with this pack's searchTerms."
+    },
+    {
       "ref": "ca.mash.bidsandtenders",
       "priority": 1
     },
@@ -56,6 +66,13 @@
       "priority": 3,
       "note": "US nonprofits holding federal grants sometimes post here."
     }
+  ],
+  "searchTerms": [
+    "fund accounting",
+    "ERP",
+    "payroll",
+    "grant management",
+    "nonprofit"
   ],
   "directSites": {
     "note": "Most nonprofit RFPs never reach a procurement portal. They are posted on the organisation's own site, often on a page called Procurement, Opportunities or Work With Us. This is the channel that matters most for this industry and the one a portal-only sweep misses entirely.",

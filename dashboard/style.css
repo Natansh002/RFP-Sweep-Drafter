@@ -154,3 +154,54 @@ body.static .grid input:disabled, body.static .grid select:disabled, body.static
 .empty-state { max-width: 720px; margin: 40px auto; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 24px; }
 .empty-state h2 { margin-top: 0; }
 .empty-state pre { white-space: pre-wrap; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 10px; }
+
+/* ---- sweep + workspace */
+.main-tabs { margin-bottom: 12px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px; margin-bottom: 16px; }
+.card h2 { margin: 0 0 10px; font-size: 17px; }
+.sweep-form { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)) auto; gap: 12px; align-items: end; }
+.sweep-form label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+.sweep-form select { width: 100%; }
+button.big { min-height: 40px; padding: 8px 18px; font-size: 14px; font-weight: 600; }
+button.small { min-height: 26px; padding: 2px 10px; }
+@media (max-width: 900px) { .sweep-form { grid-template-columns: 1fr 1fr; } .sweep-form button { grid-column: 1 / -1; } }
+.results-head { display: flex; flex-wrap: wrap; gap: 12px; align-items: baseline; justify-content: space-between; margin: 8px 0; }
+.results-head h2 { margin: 0; font-size: 18px; }
+.pill.low { background: var(--line); color: var(--muted); }
+tr.selected td { background: var(--edit); }
+.workspace { margin-top: 16px; }
+.ws-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; }
+.ws-head h2 { margin: 0; }
+.ws-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: start; }
+.stepper { list-style: none; display: flex; flex-wrap: wrap; gap: 6px; padding: 0; margin: 14px 0; counter-reset: s; }
+.stepper li button { border-radius: 999px; padding: 6px 14px 6px 6px; }
+.stepper li .n { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--line); font-size: 12px; font-weight: 600; margin-right: 4px; }
+.stepper li.done .n { background: var(--pursue-bg); color: var(--pursue); }
+.stepper li:not(:last-child)::after { content: "→"; color: var(--muted); margin-left: 6px; }
+.ws-kpis { padding: 0; margin: 8px 0 4px; }
+.ws-tabs { padding: 0; margin: 8px 0 12px; }
+.ws-tabs button.active { border-bottom-color: var(--accent); font-weight: 600; }
+.notice { background: var(--edit); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; font-size: 13px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.facts { width: 100%; border-collapse: collapse; font-size: 13px; }
+.facts th { text-align: left; font-weight: 600; padding: 4px 8px 4px 0; width: 38%; vertical-align: top; }
+.facts td { padding: 4px 0; }
+.facts.inferred th { color: var(--muted); }
+.next { font-weight: 600; }
+.status { font-size: 12px; font-weight: 600; border-radius: 4px; padding: 1px 6px; }
+.status.addressed, .status.conf-high { background: var(--pursue-bg); color: var(--pursue); }
+.status.partial, .status.conf-medium { background: var(--review-bg); color: var(--review); }
+.status.missing, .status.conf-low { background: var(--danger-bg); color: var(--danger); }
+.responses textarea { min-height: 90px; min-width: 280px; font-size: 12px; }
+.risk-list { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.risk-list li { border-left: 3px solid var(--line); padding: 6px 10px; background: var(--bg); border-radius: 4px; }
+.risk-list li.sev-high { border-left-color: var(--danger); }
+.risk-list li.sev-medium { border-left-color: var(--review); }
+.readiness { font-weight: 700; font-size: 15px; }
+.readiness.ok { color: var(--pursue); }
+.readiness.bad { color: var(--danger); }
+ul.blocking li { color: var(--danger); }
+.upload-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.upload-grid textarea { min-height: 160px; margin-top: 6px; }
+.lbl { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+@media (max-width: 800px) { .upload-grid { grid-template-columns: 1fr; } }
+[hidden] { display: none !important; }

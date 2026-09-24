@@ -27,13 +27,18 @@ import { effectivePack } from "../lib/pack.mjs";
 import { draftResponse } from "../lib/draft.mjs";
 import { safeLink } from "../lib/guard.mjs";
 import { buildCalendar } from "../lib/ics.mjs";
-import { DEFAULT_GO_NO_GO, COMPLIANCE_STATUSES } from "../lib/ledger.mjs";
+import { DEFAULT_GO_NO_GO, COMPLIANCE_STATUSES, saveWorkspace } from "../lib/ledger.mjs";
+import { browserBundle, VENDOR } from "../lib/bundle.mjs";
+import { sharedMeta } from "../lib/meta.mjs";
+import { CAPABILITIES, GEOGRAPHIES, DATE_RANGES, DEFAULT_MATRIX, matchCapabilities, recommendTeam } from "../lib/capabilities.mjs";
+import { RESPONSE_STATUSES } from "../lib/respond.mjs";
+import { industryIds, GENERAL_ID } from "../lib/config.mjs";
 
 const PORT = Number(process.env.PORT ?? 4173);
 const HOST = "127.0.0.1";
 const STATIC = { "/": "index.html", "/app.js": "app.js", "/style.css": "style.css" };
-const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8" };
-const CSP = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".mjs": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8" };
+const CSP = "default-src 'none'; script-src 'self'; worker-src 'self' blob:; style-src 'self'; img-src 'self' data: blob:; connect-src 'self' blob:; font-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
 // One write at a time per tenant, so two tabs cannot interleave a load/modify/save.
 const locks = new Map();
@@ -88,7 +93,52 @@ function tenantSummary(id) {
 }
 
 const routes = [
-  ["GET", /^\/api\/meta$/, async () => ({ tenants: tenantIds().map(tenantSummary), statuses: STATUSES, complianceStatuses: COMPLIANCE_STATUSES })],
+  ["GET", /^\/api\/meta$/, async () => ({ tenants: tenantIds().map(tenantSummary), ...sharedMeta() })],
+
+  // Industry → Geography → Capability → Date range. Live sweep, merged into the all-industries pipeline.
+  ["POST", /^\/api\/search$/, async (req) => {
+    const b = await json(req);
+    const industries = b.industry ? [b.industry] : loadTenant(GENERAL_ID).industries;
+    const log = [];
+    const res = await withLedger(GENERAL_ID, async (l) => {
+      const ids = new Set(); let low = 0, gaps = 0;
+      for (const ind of industries) {
+        const run = await runSweep(GENERAL_ID, ind, { width: Number(b.width ?? 2), capabilities: b.capability ? [b.capability] : [], geography: b.geography || null, sinceDays: b.days ? Number(b.days) : null, matrix: loadData("config/capability-matrix.json") ?? undefined, log: (m) => log.push(m), source: "dashboard" });
+        mergeRun(l, run);
+        for (const f of run.findings) ids.add(f.id);
+        low += run.lowFit ?? 0; gaps += run.gaps.length;
+      }
+      const found = l.findings.filter((f) => ids.has(f.id));
+      return { ids: [...ids], found: found.length, high: found.filter((f) => f.band === "pursue").length, review: found.filter((f) => f.band === "review").length, low, gaps };
+    });
+    await writeWorkbook(loadLedger(ROOT, GENERAL_ID), loadTenant(GENERAL_ID), outputFile(GENERAL_ID));
+    return { ...res, log };
+  }],
+
+  ["PUT", /^\/api\/findings\/([\w-]+)\/workspace$/, async (req, u, [id]) => {
+    const body = await json(req);
+    return withLedger(tenantParam(u), (l) => saveWorkspace(l, id, body, { by: actor(req) }));
+  }],
+
+  // An RFP document someone uploaded in "Analyze a document", added to the pipeline.
+  ["POST", /^\/api\/findings$/, async (req, u) => {
+    const b = await json(req);
+    const tid = tenantParam(u);
+    if (!b.title || !b.text) throw Object.assign(new Error("title and text are required"), { status: 400 });
+    return withLedger(tid, (l) => {
+      const caps = matchCapabilities(b.title, b.text);
+      const id = `${tid.slice(0, 4)}-u${Date.now().toString(36)}`;
+      const f = {
+        id, tenant: tid, industry: b.industry || "any", industryStatus: "uploaded", title: String(b.title).slice(0, 200), buyer: b.buyer || null, country: null, url: safeLink(b.url) ?? null,
+        channel: "upload", closeDate: b.closeDate || null, estimatedValue: null, score: Number(b.score ?? 0), band: b.band || "review", reasons: ["uploaded by a person; scored by the analyzer"], flags: [],
+        draft: { brief: "", response: null }, assignee: "", suggestedAssignee: "", actions: [], keyDates: {}, requirements: [], competitors: [],
+        sourceText: String(b.text).slice(0, 60000), capabilities: caps.map(({ id, label, matched }) => ({ id, label, matched })), team: recommendTeam(caps, loadData("config/capability-matrix.json") ?? undefined),
+        status: "New", notes: "", rev: 0, firstSeen: new Date().toISOString(), lastSeen: new Date().toISOString(), seenCount: 1, goNoGo: {}, lossReason: "", awardee: "",
+      };
+      l.findings.push(f);
+      return f;
+    });
+  }],
 
   ["GET", /^\/api\/ledger$/, async (req, u) => loadLedger(ROOT, tenantParam(u))],
 
@@ -175,6 +225,7 @@ const routes = [
 
 function tenantParam(u) {
   const id = u.searchParams.get("tenant") ?? "";
+  if (!id) return GENERAL_ID;
   if (!tenantIds().includes(id)) throw Object.assign(new Error(`Unknown tenant "${id}"`), { status: 400 });
   return id;
 }
@@ -186,6 +237,9 @@ const server = http.createServer(async (req, res) => {
     if (!new RegExp(`^(127\\.0\\.0\\.1|localhost|\\[::1\\]):${PORT}$`).test(host)) return send(res, 421, { error: "Unexpected Host header" });
     const u = new URL(req.url, `http://${host}`);
 
+    if (req.method === "GET" && u.pathname === "/rfp-bundle.js") return send(res, 200, Buffer.from(browserBundle()), { "content-type": TYPES[".js"] });
+    const vend = u.pathname.match(/^\/vendor\/([\w.-]+)$/);
+    if (req.method === "GET" && vend && VENDOR[vend[1]]) return send(res, 200, fs.readFileSync(path.join(ROOT, VENDOR[vend[1]])), { "content-type": TYPES[path.extname(vend[1])] ?? "text/javascript", "cache-control": "max-age=86400" });
     if (req.method === "GET" && STATIC[u.pathname]) {
       const file = path.join(ROOT, "dashboard", STATIC[u.pathname]);
       return send(res, 200, fs.readFileSync(file), { "content-type": TYPES[path.extname(file)] });

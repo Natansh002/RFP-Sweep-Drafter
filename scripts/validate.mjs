@@ -113,6 +113,7 @@ for (const { file, id, full } of listJson("tenants")) {
   if (!t) continue;
 
   if (t.id !== id) err(`tenants/${file}: id "${t.id}" does not match the filename`);
+  if (id === "all") err(`tenants/${file}: "all" is reserved for the built-in all-industries mode`);
   if (!t.name) err(`tenants/${file}: missing name`);
   if ((t.industries ?? []).length === 0) err(`tenants/${file}: subscribes to no industries`);
 

@@ -13,7 +13,7 @@
       <h1>RFP findings</h1>
     </div>
     <div class="controls">
-      <label>Company
+      <label>Pipeline
         <select id="tenant"></select>
       </label>
       <label>Your role
@@ -22,7 +22,15 @@
     </div>
   </header>
 
-  <section class="toolbar">
+  <nav class="tabs main-tabs" role="tablist">
+    <button role="tab" data-tab="sweep" class="active">RFP Sweep</button>
+    <button role="tab" data-tab="analyze">Analyze a document</button>
+    <button role="tab" data-tab="findings">Pipeline</button>
+    <button role="tab" data-tab="actions">Action items</button>
+    <button role="tab" data-tab="coverage">Coverage &amp; runs</button>
+  </nav>
+
+  <section class="toolbar pipeline-only" hidden>
     <div class="group">
       <select id="sweepIndustry" aria-label="Industry to sweep"></select>
       <select id="sweepWidth" aria-label="How wide">
@@ -41,16 +49,51 @@
     </div>
   </section>
 
-  <section class="kpis" id="kpis"></section>
-
-  <nav class="tabs" role="tablist">
-    <button role="tab" data-tab="findings" class="active">Findings</button>
-    <button role="tab" data-tab="actions">Action items</button>
-    <button role="tab" data-tab="coverage">Coverage &amp; runs</button>
-  </nav>
+  <section class="kpis pipeline-only" id="kpis" hidden></section>
 
   <main>
-    <section id="tab-findings" class="tab">
+    <section id="tab-sweep" class="tab">
+      <div class="card sweep-card">
+        <h2>What are you looking for?</h2>
+        <div class="sweep-form">
+          <label>Industry <select id="sIndustry"></select></label>
+          <label>Geography <select id="sGeo"></select></label>
+          <label>Capability <select id="sCap"></select></label>
+          <label>Date range <select id="sDays"></select></label>
+          <button id="sRun" class="primary big">Run RFP Sweep</button>
+        </div>
+        <p class="hint" id="sNote"></p>
+      </div>
+      <div id="sWorkspace"></div>
+      <div id="sResults"></div>
+    </section>
+
+    <section id="tab-analyze" class="tab" hidden>
+      <div class="card">
+        <h2>Analyze an RFP document</h2>
+        <p class="hint">Files are read in your browser. Nothing is uploaded anywhere.</p>
+        <div class="upload-grid">
+          <div>
+            <label class="lbl" for="aRfpFile">RFP / RFQ / RFI (PDF, DOCX, TXT, HTML)</label>
+            <input type="file" id="aRfpFile" accept=".pdf,.docx,.txt,.md,.html,.htm">
+            <textarea id="aRfpText" placeholder="…or paste the solicitation text here"></textarea>
+          </div>
+          <div>
+            <label class="lbl" for="aPropFile">Your draft proposal (optional, for compliance screening)</label>
+            <input type="file" id="aPropFile" accept=".pdf,.docx,.txt,.md,.html,.htm">
+            <textarea id="aPropText" placeholder="…or paste your draft response"></textarea>
+          </div>
+        </div>
+        <div class="row">
+          <input id="aTitle" placeholder="Title (optional)">
+          <input id="aBuyer" placeholder="Buyer (optional)">
+          <button id="aRun" class="primary">Analyze RFP</button>
+        </div>
+      </div>
+      <div id="aWorkspace"></div>
+    </section>
+
+    <section id="tab-findings" class="tab" hidden>
       <div class="filters">
         <input id="q" type="search" placeholder="Search title, buyer, notes">
         <select id="fIndustry"><option value="">All industries</option></select>
@@ -95,6 +138,7 @@
 
   <datalist id="team"></datalist>
   <div id="toast" role="status" aria-live="polite"></div>
+  <script src="/rfp-bundle.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

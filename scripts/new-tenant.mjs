@@ -14,6 +14,7 @@ if (!id || !name || !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(id)) {
   console.error('usage: npm run new-tenant -- <kebab-id> "<Company name>" --industries k12,nonprofit [--geo CA,US]');
   process.exit(2);
 }
+if (id === "all") { console.error('"all" is reserved for the built-in all-industries mode. Pick another id.'); process.exit(2); }
 const file = path.join(ROOT, "tenants", `${id}.json`);
 if (fs.existsSync(file)) { console.error(`${file} already exists`); process.exit(1); }
 

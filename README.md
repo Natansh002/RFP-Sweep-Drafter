@@ -1,25 +1,40 @@
-# ionic-rfp-sweeper
+# RFP Sweep & Drafter
 
-An RFP sweeper and drafter that works for any Ionic operating company. It finds
-public RFPs, RFQs and RFIs, scores them, reads each posting's own page, and drafts a
-first response. Everything it finds goes to an **Excel workbook** and a **local
-dashboard**, where people assign owners and work through action items.
+An RFP operating system for professional services: **Find → Understand → Qualify →
+Assign → Answer → Review → Respond**. Nobody configures a company first. You
+say what you are looking for:
 
-- Industries are shared JSON packs. Each company is a tenant file.
-- **It never files a Jira issue or task.** Action items live in the dashboard and the spreadsheet.
-- **It never links to or updates Confluence**, or any other internal tool (CRM, Microsoft 365, Slack, Google Workspace, helpdesks, intranet). This is enforced in code and in CI.
-- It never sends anything. No email, no chat messages, no calendar invites.
+> **Industry → Geography → Capability → Date range** → **Run RFP Sweep**
 
-```
-pick company + industry → resolve public channels → fetch (guarded) → extract
-   → score → read each candidate's posting page → re-score → draft
-   → ledger (store/) → Excel (output/) + dashboard (127.0.0.1)
-```
+and get a scored pipeline ("24 opportunities found: 8 High fit, 10 Review"). Open
+any opportunity and work it through **Qualify → Assign → Analyze RFP → Draft
+response → Red-team**, then **export the scoring file** (Excel) and the
+proposal draft.
+
+Live: **https://natansh002.github.io/RFP-Sweep-Drafter/** (read-only, refreshed by
+GitHub Actions). Full editing: `npm run dashboard` on your machine.
+
+| Step | What it does | Agent in the spec |
+|---|---|---|
+| Discover | Sweeps CanadaBuys open data, SAM.gov and public portals; de-duplicates; filters by industry, geography, capability, date | Scout |
+| Understand | Reads the notice or the uploaded RFP (PDF / DOCX / TXT / HTML, in the browser). Extracts dates, term, value, evaluation weights, submission rules and requirements | Lens, Decomposer |
+| Qualify | Fit / risk / timeline / coverage scores with reasons. *Why it matters, why we may not qualify, key risks, information still required, next action.* **Verified** facts (with source) kept apart from **inferred** ones | FitCheck |
+| Assign | Recommends opportunity owner, solution lead, technical lead, commercial owner, SMEs and sponsor from `config/capability-matrix.json` (roles only). Override any of them | Route |
+| Answer | Drafts each requirement from the approved knowledge base (`library/knowledge.json`), citing the source with a confidence level. **No approved source means "SME validation required", never invented text** | AnswerSmith, ProofPoint |
+| Build | First-draft proposal in the customer's own section names: executive summary (problem → approach → outcomes → why us), responses, compliance matrix, assumptions, risks. Pricing is never drafted | ProposalBuilder |
+| Review | Red-team check: unanswered or unapproved mandatory items, SME markers, stale sources, page limits, generic phrasing, repetition. **Ready / Needs review** with blocking issues | RedTeam |
+| Learn | Won / lost / no-bid, loss reason and awardee on each finding, a Pipeline sheet with win rate, audit history and workspace versions | Learn |
+
+**How it analyzes:** pattern matching and TF-IDF text similarity, not a language
+model, and every output says so. It is deterministic, explains each score, and
+never fabricates a reference, certification, capability or metric.
 
 ## Quick start
 
 ```bash
 npm install
+npm run dashboard                               # http://127.0.0.1:4173 → RFP Sweep tab
+npm run analyze -- --rfp path/to/rfp.pdf        # scoring .xlsx + summary .md in output/
 npm run check                                   # build + validate + tests
 npm run new-tenant -- acme "Acme" --industries k12   # add your company first
 npm run sweep -- --tenant acme --width 1        # writes store/ and output/

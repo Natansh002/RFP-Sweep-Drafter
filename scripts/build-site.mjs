@@ -17,13 +17,15 @@ import { loadLedger, STATUSES, COMPLIANCE_STATUSES, DEFAULT_GO_NO_GO } from "../
 import { workbookBuffer } from "../lib/excel.mjs";
 import { buildCalendar } from "../lib/ics.mjs";
 import { findBlocked } from "../lib/guard.mjs";
+import { browserBundle, VENDOR } from "../lib/bundle.mjs";
+import { sharedMeta } from "../lib/meta.mjs";
 
 const OUT = path.join(ROOT, "site");
 fs.rmSync(OUT, { recursive: true, force: true });
 fs.mkdirSync(path.join(OUT, "data"), { recursive: true });
 fs.mkdirSync(path.join(OUT, "downloads"), { recursive: true });
 
-const CSP = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'";
+const CSP = "default-src 'none'; script-src 'self'; worker-src 'self' blob:; style-src 'self'; img-src 'self' data: blob:; connect-src 'self' blob:; font-src 'self' data:; base-uri 'none'; form-action 'none'";
 
 const tenants = [];
 for (const id of tenantIds()) {
@@ -52,17 +54,20 @@ const meta = {
   builtAt: new Date().toISOString(),
   repo: process.env.GITHUB_REPOSITORY ?? null,
   tenants,
-  statuses: STATUSES,
-  complianceStatuses: COMPLIANCE_STATUSES,
+  ...sharedMeta(),
 };
 fs.writeFileSync(path.join(OUT, "data", "meta.json"), JSON.stringify(meta, null, 2));
 
 const html = fs.readFileSync(path.join(ROOT, "dashboard", "index.html"), "utf8")
   .replace("<head>", `<head>\n  <meta http-equiv="Content-Security-Policy" content="${CSP}">\n  <meta name="rfp-mode" content="static">`)
   .replace(/href="\/style\.css"/, 'href="style.css"')
-  .replace(/src="\/app\.js"/, 'src="app.js"');
+  .replace(/src="\/app\.js"/, 'src="app.js"')
+  .replace(/src="\/rfp-bundle\.js"/, 'src="rfp-bundle.js"');
 fs.writeFileSync(path.join(OUT, "index.html"), html);
 for (const f of ["app.js", "style.css"]) fs.copyFileSync(path.join(ROOT, "dashboard", f), path.join(OUT, f));
+fs.writeFileSync(path.join(OUT, "rfp-bundle.js"), browserBundle());
+fs.mkdirSync(path.join(OUT, "vendor"), { recursive: true });
+for (const [name, src] of Object.entries(VENDOR)) fs.copyFileSync(path.join(ROOT, src), path.join(OUT, "vendor", name));
 fs.writeFileSync(path.join(OUT, ".nojekyll"), "");
 
 console.log(`site/ built: ${tenants.map((t) => `${t.id} (${t.findings})`).join(", ")}`);

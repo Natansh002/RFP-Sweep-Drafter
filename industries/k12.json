@@ -19,6 +19,16 @@
   ],
   "channels": [
     {
+      "ref": "ca.federal.canadabuys.open",
+      "priority": 1,
+      "note": "Structured open data with full descriptions."
+    },
+    {
+      "ref": "us.federal.sam.search",
+      "priority": 1,
+      "note": "Searched with this pack's searchTerms."
+    },
+    {
       "ref": "ca.mash.bidsandtenders",
       "priority": 1,
       "note": "Highest yield. Most boards post here."
@@ -65,6 +75,14 @@
       "ref": "us.agg.bidnetdirect",
       "priority": 3
     }
+  ],
+  "searchTerms": [
+    "ERP",
+    "payroll",
+    "HRIS",
+    "student information system",
+    "financial system",
+    "school"
   ],
   "directSites": {
     "note": "Boards below the posting threshold never reach a portal. These are swept directly. Populate per province from the tenant's target list.",

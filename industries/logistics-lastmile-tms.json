@@ -43,6 +43,16 @@
   ],
   "channels": [
     {
+      "ref": "ca.federal.canadabuys.open",
+      "priority": 1,
+      "note": "Structured open data with full descriptions."
+    },
+    {
+      "ref": "us.federal.sam.search",
+      "priority": 1,
+      "note": "Searched with this pack's searchTerms."
+    },
+    {
       "ref": "us.federal.sam",
       "priority": 1,
       "note": "Has a public Opportunities API. Use the API, not the UI. Highest-signal channel for this pack."
@@ -82,6 +92,13 @@
       "ref": "ca.agg.merx",
       "priority": 3
     }
+  ],
+  "searchTerms": [
+    "courier",
+    "delivery management",
+    "last mile",
+    "dispatch software",
+    "proof of delivery"
   ],
   "directSites": {
     "note": "Health authority and hospital group procurement pages, and the large pharmacy and grocery chains. These publish on their own sites as often as on a portal.",

@@ -4,6 +4,30 @@
   "lastReviewed": "2026-09-24",
   "channels": [
     {
+      "id": "us.federal.sam.search",
+      "name": "SAM.gov opportunity search",
+      "url": "https://sam.gov/api/prod/sgs/v1/search/",
+      "level": "federal",
+      "country": "US",
+      "access": "free",
+      "render": "server",
+      "format": "sam-sgs",
+      "note": "Public search endpoint behind sam.gov. One request per pack search term; active notices only.",
+      "verified": "2026-09-24"
+    },
+    {
+      "id": "ca.federal.canadabuys.open",
+      "name": "CanadaBuys open tender notices (open data)",
+      "url": "https://canadabuys.canada.ca/opendata/pub/openTenderNotice-ouvertAvisAppelOffres.csv",
+      "level": "federal",
+      "country": "CA",
+      "access": "free",
+      "render": "server",
+      "format": "canadabuys-csv",
+      "note": "Official open-data CSV of every open tender on CanadaBuys, with full descriptions, buyers and closing dates. Mostly federal.",
+      "verified": "2026-09-24"
+    },
+    {
       "id": "ca.federal.canadabuys",
       "name": "CanadaBuys",
       "url": "https://canadabuys.canada.ca",
@@ -22,7 +46,11 @@
       "region": "BC",
       "access": "free",
       "render": "client",
-      "covers": ["ministries", "crown corporations", "broader public sector"],
+      "covers": [
+        "ministries",
+        "crown corporations",
+        "broader public sector"
+      ],
       "verified": "2026-09-24"
     },
     {
@@ -45,7 +73,11 @@
       "region": "AB",
       "access": "free",
       "render": "client",
-      "covers": ["ministries", "municipal", "academic"],
+      "covers": [
+        "ministries",
+        "municipal",
+        "academic"
+      ],
       "verified": "2026-09-24"
     },
     {
@@ -92,7 +124,11 @@
       "region": "QC",
       "access": "free",
       "render": "client",
-      "covers": ["provincial", "municipal", "public bodies"],
+      "covers": [
+        "provincial",
+        "municipal",
+        "public bodies"
+      ],
       "language": "fr",
       "verified": "2026-09-24"
     },
@@ -181,7 +217,11 @@
       "country": "CA",
       "access": "free",
       "render": "client",
-      "covers": ["municipalities", "school boards", "public agencies"],
+      "covers": [
+        "municipalities",
+        "school boards",
+        "public agencies"
+      ],
       "note": "The single highest-yield MASH channel. Hundreds of Canadian municipalities and school boards post here.",
       "verified": "2026-09-24"
     },
@@ -193,7 +233,11 @@
       "country": "CA",
       "access": "paid",
       "render": "client",
-      "covers": ["federal", "provincial", "mash"],
+      "covers": [
+        "federal",
+        "provincial",
+        "mash"
+      ],
       "verified": "2026-09-24"
     },
     {
@@ -204,7 +248,10 @@
       "country": "CA",
       "access": "paid",
       "render": "client",
-      "covers": ["municipal", "mash"],
+      "covers": [
+        "municipal",
+        "mash"
+      ],
       "verified": "2026-09-24"
     },
     {
@@ -248,7 +295,11 @@
       "country": "US",
       "access": "paid",
       "render": "client",
-      "covers": ["state", "local", "education"],
+      "covers": [
+        "state",
+        "local",
+        "education"
+      ],
       "verified": "2026-09-24"
     },
     {

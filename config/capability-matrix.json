@@ -1,0 +1,69 @@
+{
+  "$comment": "Capability → owner roles. Roles only, never people. Edit to match your practices; the Route step and the requirement owners use it.",
+  "roles": {
+    "opportunityOwner": "Sales Exec",
+    "commercialOwner": "Commercial Lead",
+    "executiveSponsor": "Practice Director",
+    "technicalLead": "Solutions Architect",
+    "bidManager": "RFP Manager"
+  },
+  "byCapability": {
+    "erp": {
+      "solutionLead": "Finance Practice Lead",
+      "sme": "Finance Practice SME"
+    },
+    "hcm": {
+      "solutionLead": "HR Practice Lead",
+      "sme": "HR Practice SME"
+    },
+    "payroll": {
+      "solutionLead": "Payroll Practice Lead",
+      "sme": "Payroll Practice SME"
+    },
+    "sis": {
+      "solutionLead": "Education Practice Lead",
+      "sme": "Education Practice SME"
+    },
+    "integration": {
+      "solutionLead": "Technical Services Lead",
+      "sme": "Technical Services SME"
+    },
+    "migration": {
+      "solutionLead": "Data Practice Lead",
+      "sme": "Data Practice SME"
+    },
+    "saas": {
+      "solutionLead": "Implementation Services Lead",
+      "sme": "Implementation Services SME"
+    },
+    "managed": {
+      "solutionLead": "Support / Customer Success Lead",
+      "sme": "Support / Customer Success SME"
+    },
+    "consulting": {
+      "solutionLead": "Professional Services Lead",
+      "sme": "Professional Services SME"
+    },
+    "tms": {
+      "solutionLead": "Logistics Practice Lead",
+      "sme": "Logistics Practice SME"
+    }
+  },
+  "byCategory": {
+    "security": "Security SME",
+    "legal": "Legal",
+    "insurance": "Legal",
+    "pricing": "Commercial Lead",
+    "data": "Data Practice SME",
+    "integration": "Technical Services SME",
+    "implementation": "Delivery Lead",
+    "training": "Training Lead",
+    "support": "Support / Customer Success",
+    "format": "RFP Manager",
+    "form": "RFP Manager",
+    "experience": "RFP Manager",
+    "accessibility": "Delivery Lead",
+    "functional": "Solution Lead",
+    "general": "RFP Manager"
+  }
+}

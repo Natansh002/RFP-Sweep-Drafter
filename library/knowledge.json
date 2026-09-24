@@ -1,0 +1,4 @@
+{
+  "$comment": "Shared knowledge base for the Answer step: approved, reusable answers any team may cite. One entry per answer. Only approved text. The drafter cites entries by id with their review date and marks overdue ones STALE; with no match it writes 'SME validation required' instead of inventing an answer. No customer data, no people's names, no links to internal tools.",
+  "entries": []
+}

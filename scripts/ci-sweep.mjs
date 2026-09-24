@@ -26,6 +26,7 @@ const width = Number(process.env.SWEEP_WIDTH ?? 2);
 
 for (const id of tenantIds()) {
   const tenant = loadTenant(id);
+  if (id === "all" && process.env.SKIP_GENERAL === "1") continue;
   console.log(`\n=== ${tenant.name}`);
 
   // 1. restore

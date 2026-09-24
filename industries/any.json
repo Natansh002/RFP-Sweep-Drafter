@@ -1,0 +1,260 @@
+{
+  "id": "any",
+  "name": "Any industry / public sector",
+  "status": "unvalidated",
+  "statusNote": "Capability-led search across every buyer type: government, health, education, utilities, nonprofits. Keywords come from lib/capabilities.mjs. Pick a capability to narrow it.",
+  "lastReviewed": "2026-09-24",
+  "geography": [
+    "CA",
+    "US"
+  ],
+  "buyerTypes": [
+    "school board",
+    "school district",
+    "municipality",
+    "city",
+    "county",
+    "province",
+    "state",
+    "ministry",
+    "department",
+    "agency",
+    "health authority",
+    "hospital",
+    "university",
+    "college",
+    "utility",
+    "housing authority",
+    "charity",
+    "foundation",
+    "nonprofit"
+  ],
+  "channels": [
+    {
+      "ref": "ca.federal.canadabuys.open",
+      "priority": 1,
+      "note": "Structured open data with full descriptions."
+    },
+    {
+      "ref": "us.federal.sam.search",
+      "priority": 1,
+      "note": "Searched with the capability terms."
+    },
+    {
+      "ref": "ca.mash.bidsandtenders",
+      "priority": 2
+    },
+    {
+      "ref": "ca.bc.bcbid",
+      "priority": 2
+    },
+    {
+      "ref": "ca.on.ontariotenders",
+      "priority": 2
+    },
+    {
+      "ref": "ca.ab.apc",
+      "priority": 2
+    },
+    {
+      "ref": "ca.agg.merx",
+      "priority": 3
+    },
+    {
+      "ref": "us.agg.bidnetdirect",
+      "priority": 3
+    }
+  ],
+  "searchTerms": [
+    "ERP implementation",
+    "HRIS",
+    "payroll system",
+    "data migration",
+    "system integration",
+    "managed services",
+    "software implementation",
+    "financial system"
+  ],
+  "directSites": {
+    "note": "Buyers whose RFPs never reach a portal.",
+    "cadence": "weekly",
+    "seedFrom": "data/nonprofit-watch.json"
+  },
+  "qualifiers": {
+    "titleKeywords": [
+      "ERP",
+      "enterprise resource planning",
+      "financial management system",
+      "financial system",
+      "finance system",
+      "accounting system",
+      "accounting software",
+      "general ledger",
+      "Dynamics 365",
+      "Business Central",
+      "fund accounting",
+      "budgeting system",
+      "HRIS",
+      "HRMS",
+      "HCM",
+      "human resources information system",
+      "human capital management",
+      "human resources system",
+      "talent management",
+      "applicant tracking",
+      "payroll system",
+      "payroll services",
+      "payroll software",
+      "payroll",
+      "time and attendance",
+      "timekeeping",
+      "absence management",
+      "scheduling and absence",
+      "student information system",
+      "SIS",
+      "student records system",
+      "learning management system",
+      "system integration",
+      "systems integration",
+      "integration services",
+      "integration platform",
+      "middleware",
+      "API",
+      "data migration",
+      "data conversion",
+      "legacy system replacement",
+      "system replacement",
+      "modernization",
+      "modernisation",
+      "SaaS",
+      "software as a service",
+      "cloud solution",
+      "cloud-based solution",
+      "implementation services",
+      "software implementation",
+      "system implementation",
+      "managed services",
+      "application support",
+      "support and maintenance",
+      "application management services",
+      "help desk services",
+      "consulting services",
+      "professional services",
+      "advisory services",
+      "business analysis",
+      "digital transformation",
+      "change management services"
+    ],
+    "bodyKeywords": [
+      "chart of accounts",
+      "accounts payable",
+      "purchase order",
+      "procure to pay",
+      "fixed assets",
+      "grant accounting",
+      "fund accounting",
+      "financial reporting",
+      "position control",
+      "employee self service",
+      "manager self service",
+      "onboarding",
+      "performance management",
+      "collective agreement",
+      "seniority",
+      "T4",
+      "ROE",
+      "W-2",
+      "pay runs",
+      "timesheets",
+      "leave management",
+      "garnishment",
+      "report cards",
+      "attendance tracking",
+      "timetabling",
+      "enrolment",
+      "enrollment",
+      "gradebook",
+      "interfaces",
+      "integrate with",
+      "single sign-on",
+      "data exchange",
+      "web services",
+      "iPaaS",
+      "legacy data",
+      "data cleansing",
+      "historical data",
+      "conversion of",
+      "migrate data",
+      "cutover",
+      "subscription",
+      "hosted solution",
+      "configuration",
+      "go-live",
+      "user acceptance testing",
+      "implementation partner",
+      "service level",
+      "SLA",
+      "tier 2",
+      "tier 3",
+      "ongoing support",
+      "maintenance and support",
+      "requirements gathering",
+      "business process",
+      "fit-gap",
+      "roadmap",
+      "change management",
+      "training services"
+    ],
+    "must": [
+      "solicitation is for software, implementation, integration, migration, support or consulting services"
+    ]
+  },
+  "disqualifiers": [
+    "construction",
+    "roofing",
+    "HVAC",
+    "paving",
+    "janitorial",
+    "custodial services",
+    "snow removal",
+    "snow clearing",
+    "food services",
+    "furniture",
+    "vehicle purchase",
+    "fuel supply",
+    "hazardous waste",
+    "landscaping",
+    "security guard services",
+    "printing services",
+    "uniforms",
+    "ammunition",
+    "spare parts"
+  ],
+  "thresholds": {
+    "note": "Varies by buyer and trade agreement.",
+    "values": [
+      {
+        "regime": "NWPTA",
+        "currency": "CAD",
+        "amount": 75000,
+        "appliesTo": "BC, AB, SK, MB goods and services"
+      }
+    ]
+  },
+  "scoring": {
+    "weights": {
+      "productFit": 45,
+      "buyerFit": 5,
+      "dealSize": 15,
+      "timeline": 15,
+      "incumbent": 10,
+      "geography": 10
+    },
+    "weightsNote": "Capability-led: what is being bought matters far more than who is buying.",
+    "minScoreToPursue": 55,
+    "autoNoBidBelow": 30
+  },
+  "sources": [
+    "lib/capabilities.mjs"
+  ]
+}

@@ -21,6 +21,16 @@
   ],
   "channels": [
     {
+      "ref": "ca.federal.canadabuys.open",
+      "priority": 1,
+      "note": "Structured open data with full descriptions."
+    },
+    {
+      "ref": "us.federal.sam.search",
+      "priority": 1,
+      "note": "Searched with this pack's searchTerms."
+    },
+    {
       "ref": "us.federal.sam",
       "priority": 1
     },
@@ -60,6 +70,12 @@
       "ref": "ca.agg.merx",
       "priority": 3
     }
+  ],
+  "searchTerms": [
+    "fleet management",
+    "freight",
+    "transportation management",
+    "telematics"
   ],
   "directSites": {
     "note": "Port and transit authority procurement pages. Most run their own portal rather than posting to a provincial or state one.",

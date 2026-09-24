@@ -22,7 +22,7 @@ const args = process.argv.slice(2);
 const opt = (name, dflt) => { const i = args.indexOf(`--${name}`); return i >= 0 ? args[i + 1] : dflt; };
 const flag = (name) => args.includes(`--${name}`);
 
-const tenantId = opt("tenant");
+const tenantId = opt("tenant", "all");
 if (!tenantId) { console.error(`--tenant is required. One of: ${tenantIds().join(", ")}`); process.exit(2); }
 const tenant = loadTenant(tenantId);
 const industries = opt("industry") ? [opt("industry")] : tenant.industries;
