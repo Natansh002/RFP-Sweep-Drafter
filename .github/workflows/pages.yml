@@ -25,6 +25,10 @@ on:
         description: "Run the sweep (false = just re-publish with committed assignments)"
         default: "true"
         required: false
+      fresh:
+        description: "Fresh start: do not carry over the previously published findings"
+        default: "false"
+        required: false
 
 permissions:
   contents: read
@@ -59,6 +63,7 @@ jobs:
         env:
           SITE_URL: ${{ steps.pages.outputs.base_url }}
           SWEEP_WIDTH: ${{ github.event.inputs.width || '2' }}
+          FRESH: ${{ github.event.inputs.fresh == 'true' && '1' || '0' }}
         run: |
           if [ "${{ github.event.inputs.sweep }}" = "false" ]; then
             node scripts/ci-sweep.mjs --no-sweep

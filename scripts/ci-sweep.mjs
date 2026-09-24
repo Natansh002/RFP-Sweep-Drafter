@@ -29,8 +29,8 @@ for (const id of tenantIds()) {
   if (id === "all" && process.env.SKIP_GENERAL === "1") continue;
   console.log(`\n=== ${tenant.name}`);
 
-  // 1. restore
-  if (SITE.startsWith("https://") && !fs.existsSync(path.join(ROOT, "store", `${id}.json`))) {
+  // 1. restore (skipped on a fresh start: FRESH=1)
+  if (process.env.FRESH !== "1" && SITE.startsWith("https://") && !fs.existsSync(path.join(ROOT, "store", `${id}.json`))) {
     try {
       const res = await fetch(`${SITE}data/${id}.json`, { headers: { "cache-control": "no-cache" } });
       if (res.ok) {
@@ -66,6 +66,11 @@ for (const id of tenantIds()) {
       }
     }
   }
+  // Closed findings nobody touched leave the list; anything a person worked on stays.
+  const today = new Date().toISOString().slice(0, 10);
+  const before = ledger.findings.length;
+  ledger.findings = ledger.findings.filter((f) => !(f.closeDate && f.closeDate < today && (f.rev ?? 0) === 0 && !f.workspace && f.status === "New"));
+  if (before !== ledger.findings.length) console.log(`pruned ${before - ledger.findings.length} closed, untouched finding(s)`);
   saveLedger(ROOT, ledger);
 }
 
