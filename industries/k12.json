@@ -19,6 +19,41 @@
   ],
   "channels": [
     {
+      "ref": "ca.agg.merx",
+      "priority": 1,
+      "note": "1. Broad Canadian public-sector coverage including school boards; keyword search in a browser."
+    },
+    {
+      "ref": "ca.agg.biddingo",
+      "priority": 1,
+      "note": "2. Ontario school boards / BPS; needs an account, so it is reported rather than read."
+    },
+    {
+      "ref": "ca.mash.bidsandtenders",
+      "priority": 2,
+      "note": "3. Individual boards' portals are swept directly from data/k12-board-sites.json."
+    },
+    {
+      "ref": "ca.ab.apc",
+      "priority": 1,
+      "note": "4. Alberta school boards; official provincial source, keyword search."
+    },
+    {
+      "ref": "ca.bc.bcbid",
+      "priority": 1,
+      "note": "5. BC school districts; bot check, reported and not bypassed."
+    },
+    {
+      "ref": "coop.oecm",
+      "priority": 1,
+      "note": "6. Ontario education-sector cooperative procurement (Euna/Bonfire feed)."
+    },
+    {
+      "ref": "ca.on.ontariotenders",
+      "priority": 1,
+      "note": "7. Ontario public-sector opportunities, public guest list."
+    },
+    {
       "ref": "ca.federal.canadabuys.open",
       "priority": 1,
       "note": "Structured open data with full descriptions."
@@ -29,34 +64,7 @@
       "note": "Searched with this pack's searchTerms."
     },
     {
-      "ref": "ca.agg.merx",
-      "priority": 1,
-      "note": "Public listing searched by keyword in a browser."
-    },
-    {
-      "ref": "ca.mash.bidsandtenders",
-      "priority": 1,
-      "note": "Highest yield. Most boards post here."
-    },
-    {
-      "ref": "coop.oecm",
-      "priority": 1,
-      "note": "One OECM RFS can close many Ontario boards at once. Missing it is the expensive miss."
-    },
-    {
-      "ref": "ca.bc.bcbid",
-      "priority": 2
-    },
-    {
-      "ref": "ca.ab.apc",
-      "priority": 2
-    },
-    {
       "ref": "ca.sk.sasktenders",
-      "priority": 2
-    },
-    {
-      "ref": "ca.on.ontariotenders",
       "priority": 2
     },
     {
@@ -86,9 +94,10 @@
     "school"
   ],
   "directSites": {
-    "note": "Boards below the posting threshold never reach a portal. These are swept directly. Populate per province from the tenant's target list.",
-    "cadence": "monthly",
-    "seedFrom": "data/k12-board-sites.json"
+    "note": "8. Individual school-board procurement portals, swept every run (bids&tenders and Euna/Bonfire).",
+    "cadence": "weekly",
+    "seedFrom": "data/k12-board-sites.json",
+    "alwaysSweep": true
   },
   "qualifiers": {
     "titleKeywords": [

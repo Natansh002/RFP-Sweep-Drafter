@@ -157,6 +157,21 @@ vm.runInContext(browserBundle(), ctx);
 a("bundle: browser build exposes the same steps", ["analyzeRfp", "qualify", "draftAnswers", "buildProposal", "redTeam", "buildAnalysisWorkbook", "matchCapabilities"].every((k) => typeof ctx.window.RFP[k] === "function"));
 a("bundle: browser result equals Node result", ctx.window.RFP.analyzeRfp({ text: RFP, packs, now: NOW }).scores.overall === analyzeRfp({ text: RFP, packs, now: NOW }).scores.overall);
 
+// ------------------------------------------------------------------ K-12 sources
+const bt = extractPostings({ id: "direct:tdsb.bidsandtenders.ca", format: "bidsandtenders-html", url: "https://tdsb.bidsandtenders.ca/Module/Tenders/en", buyer: "Toronto District School Board", buyerType: "school board", country: "CA" },
+  '<a href="#">Submit a Question - X</a><a href="/Module/Tenders/en/Tender/Detail/abc-123">Bid Details - PCM27-003P - Student Information System Replacement Bid Details</a><a href="/Module/Tenders/en/Tender/Detail/abc-123/#Document">Download Documents - PCM27-003P</a>');
+a("feed: bids&tenders board bid parsed with board as buyer", bt.postings.length === 1 && bt.postings[0].title === "PCM27-003P - Student Information System Replacement" && bt.postings[0].buyer === "Toronto District School Board" && /Tender\/Detail\/abc-123$/.test(bt.postings[0].url));
+const bf = extractPostings({ id: "coop.oecm", format: "bonfire-json", url: "https://oecm.bonfirehub.ca/PublicPortal/getOpenPublicOpportunitiesSectionData", portalUrl: "https://oecm.bonfirehub.ca/portal", buyer: "OECM" },
+  { payload: { projects: { 1: { ProjectID: 77, ReferenceID: "2026-502", ProjectName: "Cashless Transaction Management", DateClose: "2026-10-23 14:00:00" } } } });
+a("feed: Euna/Bonfire project parsed with link and close date", bf.postings[0].url === "https://oecm.bonfirehub.ca/opportunities/77" && bf.postings[0].closeDate === "2026-10-23" && bf.postings[0].buyer === "OECM");
+const jg = extractPostings({ id: "ca.on.ontariotenders", format: "jaggaer-html", url: "https://ontariotenders.app.jaggaer.com", searchUrl: "https://ontariotenders.app.jaggaer.com/esop/guest/go/public/opportunity/current" },
+  "<table><tr><td>Open</td><td>OECM</td><td></td><td>PRE-NOTICE FOR AN OECM CASHLESS TRANSACTION MANAGEMENT SOLUTION</td><td>04/08/2026 16:09</td><td>IT</td><td>23/10/2026 14:00</td></tr></table>");
+a("feed: Ontario Tenders row parsed with dd/mm dates", jg.postings[0].buyer === "OECM" && jg.postings[0].publishedDate === "2026-08-04" && jg.postings[0].closeDate === "2026-10-23");
+const k12p = loadPack("k12");
+a("K-12 pack lists the reviewed sources in order", ["ca.agg.merx", "ca.agg.biddingo", "ca.mash.bidsandtenders", "ca.ab.apc", "ca.bc.bcbid", "coop.oecm", "ca.on.ontariotenders"].every((id, i) => k12p.channels[i].ref === id) && k12p.directSites.alwaysSweep);
+const boards = JSON.parse(fs.readFileSync(new URL("../data/k12-board-sites.json", import.meta.url), "utf8")).entries;
+a("board portal list: every entry verified and public", boards.length >= 25 && boards.every((b) => b.procurementUrl.startsWith("https://") && b.verified && b.segment === "k12"));
+
 // ------------------------------------------------------------------ buyer industry
 const sec = (buyer, source = "ca.agg.merx", buyerType = "") => classifySector({ buyer, buyerType, source })?.id;
 a("sector: city, town, municipality", ["City of Coquitlam", "Town of Morinville", "Municipality of Jasper", "Nova Scotia Federation of Municipalities"].every((b) => sec(b) === "municipal"));

@@ -54,7 +54,7 @@
       "verified": "2026-09-24",
       "searchUrl": "https://bcbid.gov.bc.ca/page.aspx/en/rfp/request_browse_public",
       "browser": true,
-      "note": "Sometimes shows a bot check; the sweep reports it and never bypasses it."
+      "note": "Shows a bot check to automated browsers; reported as blocked-by-portal and never bypassed. Check it manually."
     },
     {
       "id": "ca.bc.civicinfo",
@@ -86,7 +86,8 @@
       ],
       "verified": "2026-09-24",
       "searchUrl": "https://purchasing.alberta.ca/search",
-      "browser": true
+      "browser": true,
+      "keywordParam": "keywords"
     },
     {
       "id": "ca.sk.sasktenders",
@@ -120,8 +121,11 @@
       "region": "ON",
       "access": "free",
       "render": "client",
-      "note": "Supply Ontario holds the centralised contracts.",
-      "verified": "2026-09-24"
+      "note": "Public guest list of current opportunities (Government of Ontario, OECM, Ontario Health and others). Documents need an account.",
+      "verified": "2026-09-24",
+      "searchUrl": "https://ontariotenders.app.jaggaer.com/esop/guest/go/public/opportunity/current?locale=en_CA",
+      "format": "jaggaer-html",
+      "browser": true
     },
     {
       "id": "ca.qc.seao",
@@ -265,18 +269,23 @@
         "municipal",
         "mash"
       ],
-      "verified": "2026-09-24"
+      "verified": "2026-09-24",
+      "requiresAccount": true,
+      "note": "Search is behind a sign-in (paid service). The sweeper does not log in or enter credentials, so it reports this channel as needs-account."
     },
     {
       "id": "coop.oecm",
       "name": "OECM",
-      "url": "https://oecm.ca",
+      "url": "https://oecm.bonfirehub.ca/portal",
       "level": "cooperative",
       "country": "CA",
       "access": "free",
       "render": "server",
-      "note": "Ontario education and broader public sector collaborative marketplace. An OECM agreement can substitute for a board-by-board RFP, so a missed OECM RFS closes many boards at once.",
-      "verified": "2026-09-24"
+      "note": "OECM's Euna/Bonfire portal public feed. OECM also posts on Ontario Tenders.",
+      "verified": "2026-09-24",
+      "searchUrl": "https://oecm.bonfirehub.ca/PublicPortal/getOpenPublicOpportunitiesSectionData",
+      "format": "bonfire-json",
+      "buyer": "OECM"
     },
     {
       "id": "coop.canoe",
