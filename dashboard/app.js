@@ -797,7 +797,7 @@ function wsTab(ws) {
         h("h3", { class: "mt" }, "Inferred by this tool"),
         h("table", { class: "facts inferred" }, h("tbody", {}, ...q.inferred.map((v) => h("tr", {}, h("th", {}, v.label), h("td", {}, v.value, h("span", { class: "hint" }, ` · ${v.how}`)))))),
         h("h3", { class: "mt" }, "Evaluator summary"),
-        h("pre", {}, a.summary),
+        renderMarkdown(a.summary),
         h("button", { class: "keep", onclick: () => navigator.clipboard?.writeText(a.summary).then(() => toast("Summary copied")) }, "Copy summary")));
     case "requirements": return h("div", { class: "tablewrap" }, h("table", { class: "grid" },
       h("thead", {}, h("tr", {}, ...["ID", "Section", "Requirement", "Mandatory", "Category", "Owner", "Compliance"].map((x) => h("th", {}, x)))),
@@ -850,6 +850,45 @@ function wsTab(ws) {
             h("p", { class: "hint" }, rt.note)) : h("button", { class: "primary keep", onclick: () => { runRedTeam(ws); renderWorkspace(ws); } }, "Run red-team check")));
     }
   }
+}
+
+/**
+ * Small, safe Markdown renderer for generated summaries: headings, bullet lists,
+ * **bold**, _italic_, links shown as text. Builds DOM nodes; never innerHTML.
+ */
+function inlineMd(text) {
+  const out = [];
+  const re = /\*\*(.+?)\*\*|_(.+?)_|(https?:\/\/\S+)/g;
+  let last = 0, m;
+  while ((m = re.exec(text))) {
+    if (m.index > last) out.push(text.slice(last, m.index));
+    if (m[1]) out.push(h("strong", {}, m[1]));
+    else if (m[2]) out.push(h("em", {}, m[2]));
+    else out.push(h("a", { href: m[3], target: "_blank", rel: "noopener noreferrer", class: "url" }, m[3].length > 60 ? `${m[3].slice(0, 57)}…` : m[3]));
+    last = re.lastIndex;
+  }
+  if (last < text.length) out.push(text.slice(last));
+  return out;
+}
+function renderMarkdown(md) {
+  const root = h("div", { class: "md" });
+  let list = null;
+  for (const raw of String(md ?? "").split("\n")) {
+    const line = raw.trimEnd();
+    const bullet = line.match(/^(\s*)-\s+(.*)$/);
+    if (bullet) {
+      if (!list) { list = h("ul", {}); root.append(list); }
+      list.append(h("li", { class: bullet[1].length ? "sub" : "" }, ...inlineMd(bullet[2])));
+      continue;
+    }
+    if (!line.trim()) continue; // blank lines end nothing: lists stay together
+    list = null;
+    const hd = line.match(/^(#{1,3})\s+(.*)$/);
+    if (hd) root.append(h(hd[1].length === 1 ? "h4" : "h5", {}, ...inlineMd(hd[2])));
+    else if (/^> /.test(line)) root.append(h("blockquote", {}, ...inlineMd(line.slice(2))));
+    else root.append(h("p", {}, ...inlineMd(line)));
+  }
+  return root;
 }
 
 const slug = (s) => String(s || "rfp").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "").slice(0, 60) || "rfp";

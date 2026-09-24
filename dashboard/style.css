@@ -235,3 +235,16 @@ ul.blocking li { color: var(--danger); }
 .ws-overlay .workspace { max-width: 1180px; margin: 0 auto; box-shadow: 0 20px 60px rgba(0,0,0,.25); outline: none; }
 body.ws-open { overflow: hidden; }
 @media (max-width: 640px) { .ws-overlay { padding: 8px; } }
+
+/* ---- rendered summaries */
+.md { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.md h4 { font-size: 14px; margin: 0 0 6px; }
+.md h5 { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 12px 0 4px; }
+.md p { margin: 4px 0; }
+.md ul { margin: 2px 0 6px; padding-left: 18px; }
+.md li { margin: 2px 0; }
+.md li.sub { margin-left: 16px; list-style: circle; }
+.md blockquote { margin: 4px 0; padding-left: 10px; border-left: 3px solid var(--line); color: var(--muted); }
+.md em { color: var(--muted); }
+.md a.url { word-break: break-all; }
+.workspace pre { white-space: pre-wrap; overflow-wrap: anywhere; }
