@@ -248,3 +248,16 @@ body.ws-open { overflow: hidden; }
 .md em { color: var(--muted); }
 .md a.url { word-break: break-all; }
 .workspace pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* ---- clickable score tiles */
+.kpi-btn { display: block; text-align: left; font: inherit; color: inherit; cursor: pointer; width: 100%; min-height: 0; padding: 12px 14px; }
+.kpi-btn:hover { border-color: var(--accent); box-shadow: 0 1px 0 var(--accent); }
+.kpi-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.kpi-btn.on { border-color: var(--accent); background: var(--edit); }
+.kpi-btn .more { margin-top: 4px; font-size: 11.5px; color: var(--accent); font-weight: 600; }
+.explain { margin: 4px 0 12px; background: var(--bg); }
+.explain-head { display: flex; justify-content: space-between; align-items: baseline; }
+.explain-head h3 { margin: 0 0 6px; font-size: 14px; }
+.explain-table { max-width: 520px; margin: 4px 0 8px; }
+.explain-table th, .explain-table td { padding: 4px 10px 4px 0; text-align: left; width: auto; }
+.explain-table tr.total td { font-weight: 700; border-top: 1px solid var(--line); }

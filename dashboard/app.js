@@ -749,9 +749,55 @@ function renderWorkspace(ws) {
         h("button", { class: "keep", onclick: () => { if (box.classList.contains("ws-overlay")) hideOverlay(ws.target); else box.replaceChildren(); if (ws === state.ws) { state.ws = null; renderSweepResults(); } } }, "Close ✕"))),
     h("ol", { class: "stepper" }, ...STEPS.map(([k, label], i) => h("li", { class: done[k] ? "done" : "" }, h("button", { class: "keep", onclick: act[k] }, h("span", { class: "n" }, done[k] ? "✓" : i + 1), label)))),
     ws.finding && !ws.documentName && (!ws.text || ws.text.split(/\s+/).length < 400) ? uploadPrompt(ws) : null,
-    sc ? h("div", { class: "kpis ws-kpis" }, ...[["Overall", sc.overall, sc.band], ["Fit", sc.fit], ["Risk (higher is safer)", sc.risk], ["Timeline", sc.timeline], ...(sc.coverage != null ? [["Coverage", sc.coverage]] : []), ["Requirements", a.requirements.length, `${sc.mandatory} mandatory`]].map(([l, v, sub]) => h("div", { class: "kpi" }, h("div", { class: "v" }, v), h("div", { class: "l" }, l, sub ? ` · ${sub}` : "")))) : null,
+    sc ? h("div", { class: "kpis ws-kpis" }, ...[["overall", "Overall", sc.overall, sc.band], ["fit", "Fit", sc.fit], ["risk", "Risk (higher is safer)", sc.risk], ["timeline", "Timeline", sc.timeline], ...(sc.coverage != null ? [["coverage", "Coverage", sc.coverage]] : []), ["requirements", "Requirements", a.requirements.length, `${sc.mandatory} mandatory`]].map(([k, l, v, sub]) =>
+      h("button", { class: `kpi kpi-btn keep ${ws.explain === k ? "on" : ""}`, "aria-pressed": String(ws.explain === k), title: "Show what is behind this number",
+        onclick: () => {
+          if (k === "risk") { ws.tab = "risks"; ws.explain = null; }
+          else if (k === "requirements" || k === "coverage") { ws.tab = "requirements"; ws.explain = null; }
+          else ws.explain = ws.explain === k ? null : k;
+          renderWorkspace(ws);
+          if (!ws.explain) box.querySelector(".ws-tabs")?.scrollIntoView({ behavior: "smooth", block: "start" });
+        } },
+        h("div", { class: "v" }, v), h("div", { class: "l" }, l, sub ? ` · ${sub}` : ""), h("div", { class: "more" }, k === "risk" ? "See risks →" : k === "requirements" || k === "coverage" ? "See requirements →" : ws.explain === k ? "Hide ▴" : "Why? ▾")))) : null,
+    sc && ws.explain ? explainScore(ws) : null,
     h("nav", { class: "tabs ws-tabs" }, ...WS_TABS.map(([k, label]) => h("button", { class: `keep ${ws.tab === k ? "active" : ""}`, onclick: () => { ws.tab = k; renderWorkspace(ws); } }, label))),
     h("div", { class: "ws-body" }, wsTab(ws))));
+}
+
+/** What is behind a score tile: the reason, the inputs, and how to move it. */
+function explainScore(ws) {
+  const a = ws.analysis, sc = a.scores;
+  const reason = (p) => sc.reasons.find((r) => r.startsWith(p)) ?? "";
+  const close = a.keyData?.dates?.closing;
+  const days = close ? Math.round((new Date(`${close}T00:00:00Z`) - new Date()) / 86400000) : null;
+  let title, body;
+  if (ws.explain === "overall") {
+    title = `Overall ${sc.overall}/100: ${sc.band}`;
+    const parts = Object.entries(sc.weights).map(([k, w]) => ({ k, w, v: sc[k], c: Math.round((sc[k] * w) / 100) }));
+    body = [
+      h("table", { class: "facts explain-table" }, h("thead", {}, h("tr", {}, h("th", {}, "Part"), h("th", {}, "Score"), h("th", {}, "Weight"), h("th", {}, "Adds"))),
+        h("tbody", {}, ...parts.map((p) => h("tr", {}, h("td", {}, p.k[0].toUpperCase() + p.k.slice(1)), h("td", {}, p.v), h("td", {}, `${p.w}%`), h("td", {}, `+${p.c}`))),
+          h("tr", { class: "total" }, h("td", {}, "Overall"), h("td", {}, ""), h("td", {}, "100%"), h("td", {}, sc.overall)))),
+      h("p", { class: "hint" }, `70 or more is strong, 50 to 69 is worth a look, below 50 is weak. ${sc.coverage == null ? "Load your draft proposal to add a Coverage score." : ""} The score informs the go/no-go; a person decides.`),
+    ];
+  } else if (ws.explain === "fit") {
+    const caps = wsMeta(ws).capabilities ?? [];
+    title = `Fit ${sc.fit}/100`;
+    body = [
+      h("p", {}, reason("Fit")),
+      caps.length ? h("p", {}, "Capabilities asked for: ", ...caps.map((c) => h("span", { class: "tag" }, `${c.label}${c.matched?.length ? `: ${c.matched.slice(0, 3).join(", ")}` : ""}`))) : null,
+      h("p", { class: "hint" }, "Fit is keyword matching against the industry packs and capability terms, not a judgement of the buyer. " + ((a.words ?? 0) < 400 ? "Only the notice summary was read; load the full RFP document for a firmer fit." : "Based on the full text you loaded.")),
+    ];
+  } else if (ws.explain === "timeline") {
+    title = `Timeline ${sc.timeline}/100`;
+    const d = { ...(a.keyData?.dates ?? {}) };
+    body = [
+      h("p", {}, days == null ? "No closing date was found." : days < 0 ? `Closed ${-days} day(s) ago (${close}).` : `${days} day(s) until closing on ${close}.`),
+      Object.keys(d).length ? h("ul", { class: "plain" }, ...Object.entries(d).sort((x, y) => x[1].localeCompare(y[1])).map(([k, v]) => h("li", {}, `${DATE_NAMES[k] ?? k}: `, dueCell(v)))) : null,
+      h("p", { class: "hint" }, "Scale: 21+ days is 100, 14–20 is 75, 7–13 is 50, under 7 is 20, closed is 0, no date found is 50."),
+    ];
+  }
+  return h("div", { class: "card explain" }, h("div", { class: "explain-head" }, h("h3", {}, title), h("button", { class: "keep link", onclick: () => { ws.explain = null; renderWorkspace(ws); } }, "Close")), ...body);
 }
 
 function uploadPrompt(ws) {
