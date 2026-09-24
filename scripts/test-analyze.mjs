@@ -167,6 +167,7 @@ a("sector: SAM defence office by parent org", sec("W6QK ACC WVA", "us.federal.sa
 a("sector: SAM default is US federal", sec("SOME OFFICE", "us.federal.sam.search") === "federal-us");
 a("sector: CanadaBuys federal department", sec("Shared Services Canada (SSC)", "ca.federal.canadabuys.open") === "federal-ca");
 a("sector: always labelled inferred with its basis", classifySector({ buyer: "City of Coquitlam" }).inferred === true && /City of/.test(classifySector({ buyer: "City of Coquitlam" }).basis));
+a("sector: a Canadian 'Department of' stays Canadian", sec("Department of Natural Resources (NRCan)", "ca.federal.canadabuys.open") === "federal-ca");
 a("sector: no buyer, no guess", classifySector({}) === null);
 
 console.log(fails ? `\n${fails} FAILED, ${passes} passed` : `\nall ${passes} analysis assertions passed`);

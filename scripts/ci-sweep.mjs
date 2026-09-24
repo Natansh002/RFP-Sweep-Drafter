@@ -48,7 +48,7 @@ for (const id of tenantIds()) {
   }
   const ledger = loadLedger(ROOT, id);
   // Findings from earlier runs get the buyer's industry too.
-  for (const f of ledger.findings) if (!f.sector) f.sector = classifySector({ buyer: f.buyer, source: f.channel });
+  for (const f of ledger.findings) if (!f.sector || f.sector.id === "federal-us" && /canadabuys/.test(f.channel ?? "")) f.sector = classifySector({ buyer: f.buyer, source: f.channel });
 
   // 2. committed assignments
   const sheet = path.join(ROOT, "assignments", `${id}.xlsx`);
