@@ -51,7 +51,10 @@
         "crown corporations",
         "broader public sector"
       ],
-      "verified": "2026-09-24"
+      "verified": "2026-09-24",
+      "searchUrl": "https://bcbid.gov.bc.ca/page.aspx/en/rfp/request_browse_public",
+      "browser": true,
+      "note": "Sometimes shows a bot check; the sweep reports it and never bypasses it."
     },
     {
       "id": "ca.bc.civicinfo",
@@ -62,7 +65,10 @@
       "region": "BC",
       "access": "free",
       "render": "server",
-      "verified": "2026-09-24"
+      "verified": "2026-09-24",
+      "searchUrl": "https://www.civicinfo.bc.ca/bids",
+      "browser": true,
+      "note": "Refuses plain fetches; reads fine in the browser."
     },
     {
       "id": "ca.ab.apc",
@@ -78,7 +84,9 @@
         "municipal",
         "academic"
       ],
-      "verified": "2026-09-24"
+      "verified": "2026-09-24",
+      "searchUrl": "https://purchasing.alberta.ca/search",
+      "browser": true
     },
     {
       "id": "ca.sk.sasktenders",
@@ -100,7 +108,7 @@
       "region": "MB",
       "access": "partial",
       "render": "client",
-      "note": "Free to view. MERX charges for document download on some plans.",
+      "note": "manitoba.merx.com no longer resolves; Manitoba notices are on the national MERX listing (ca.agg.merx).",
       "verified": "2026-09-24"
     },
     {
@@ -231,14 +239,19 @@
       "url": "https://www.merx.com",
       "level": "aggregator",
       "country": "CA",
-      "access": "paid",
+      "access": "free-listing",
       "render": "client",
       "covers": [
         "federal",
         "provincial",
         "mash"
       ],
-      "verified": "2026-09-24"
+      "verified": "2026-09-24",
+      "searchUrl": "https://www.merx.com/public/solicitations/open",
+      "format": "merx-html",
+      "browser": true,
+      "keywordParam": "keywords",
+      "note": "Public open-solicitation listing, searched by keyword in a real browser. Full documents need a MERX account."
     },
     {
       "id": "ca.agg.biddingo",

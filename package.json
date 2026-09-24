@@ -27,5 +27,8 @@
     "mammoth": "^1.12.3",
     "pdfjs-dist": "^4.10.38"
   },
-  "license": "UNLICENSED"
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "playwright": "^1.63.0"
+  }
 }

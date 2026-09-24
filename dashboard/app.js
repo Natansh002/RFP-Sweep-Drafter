@@ -158,11 +158,10 @@ function showNoTenants() {
 function setupStatic() {
   document.body.classList.add("static");
   for (const el of [$("#runSweep")?.closest(".group"), $("#importXlsx")?.closest("label"), $("#importRun")?.closest("label")]) el?.remove();
-  const built = new Date(state.meta.builtAt).toLocaleString();
   if (!state.meta.tenants.length) return;
   const upload = state.meta.repo ? `https://github.com/${state.meta.repo}/upload/main/assignments` : null;
-  $(".toolbar").before(h("section", { class: "banner" },
-    h("strong", {}, "Published view (read-only). "), `Built ${built}. `,
+  $(".toolbar").before(h("section", { class: "banner pipeline-only", hidden: state.tab === "sweep" || state.tab === "analyze" },
+    h("strong", {}, "Published view (read-only). "),
     "To assign or update: Download Excel → edit the yellow ✎ columns → save it as ", state.meta.tenants.map((t, i) => [i ? " / " : "", h("code", {}, `${t.id}.xlsx`)]),
     " and upload it to the repo's assignments/ folder", upload ? [" (", h("a", { href: upload, target: "_blank", rel: "noopener noreferrer" }, "upload"), ")"] : "",
     ". The site rebuilds with your changes."));
@@ -484,11 +483,11 @@ function setupSweepForm() {
   $("#sDays").replaceChildren(...m.dateRanges.map((d) => h("option", { value: d.id, selected: d.id === "30" }, d.label)));
   const saved = (() => { try { return JSON.parse(localStorage.getItem("rfp.sweep") || "{}"); } catch { return {}; } })();
   for (const [k, id] of [["industry", "sIndustry"], ["geo", "sGeo"], ["cap", "sCap"], ["days", "sDays"]]) if (saved[k] != null) $(`#${id}`).value = saved[k];
-  const built = state.meta.builtAt ? new Date(state.meta.builtAt).toLocaleString() : null;
-  $("#sNote").replaceChildren(...(STATIC
-    ? ["Searches the latest scheduled sweep", built ? ` (updated ${built})` : "", ". Sources: CanadaBuys open data, SAM.gov and the configured portals.",
-       state.meta.repo ? [" To refresh from the sources now: ", h("a", { href: `https://github.com/${state.meta.repo}/actions/workflows/pages.yml`, target: "_blank", rel: "noopener noreferrer" }, "run the sweep workflow"), " (about two minutes)."] : ""]
-    : ["Runs a live sweep of CanadaBuys open data, SAM.gov and the public portals, then scores every posting. Takes up to a minute."]));
+  const note = STATIC
+    ? ["Searches the latest scheduled sweep of CanadaBuys open data, SAM.gov and the public portals (refreshed every 6 hours)."]
+    : ["Runs a live sweep of CanadaBuys open data, SAM.gov and the public portals, then scores every posting. Takes up to a minute."];
+  if (STATIC && state.meta.repo) note.push(" To refresh now: ", h("a", { href: `https://github.com/${state.meta.repo}/actions/workflows/pages.yml`, target: "_blank", rel: "noopener noreferrer" }, "run the sweep workflow"), " (about two minutes).");
+  $("#sNote").replaceChildren(...note);
   $("#sRun").onclick = runSearch;
   fetchLedgerFor(GENERAL).then((l) => { state.allLedger = l; renderSweepResults(); });
 }
@@ -517,9 +516,17 @@ async function runSearch() {
   const p = sweepParams();
   const btn = $("#sRun");
   if (STATIC) {
-    state.sweepIds = new Set(clientFilter(state.allLedger?.findings ?? [], p).map((f) => f.id));
+    btn.disabled = true; btn.textContent = "Searching…";
+    await new Promise((r) => setTimeout(r, 350));
+    const all = state.allLedger?.findings ?? [];
+    const hits = clientFilter(all, p);
+    state.sweepIds = new Set(hits.map((f) => f.id));
     state.sweepLow = null;
-    return renderSweepResults();
+    btn.disabled = false; btn.textContent = "Run RFP Sweep";
+    renderSweepResults();
+    toast(`Searched ${all.length} opportunities from the latest sweep: ${hits.length} matched.`);
+    $("#sResults").scrollIntoView({ behavior: "smooth", block: "start" });
+    return;
   }
   btn.disabled = true; btn.textContent = "Sweeping…";
   try {
@@ -534,12 +541,35 @@ async function runSearch() {
   renderSweepResults();
 }
 
+/** Live numbers on the workflow strip, and which step the person is on. */
+function renderFlow(list) {
+  const set = (id, t) => { const el = $(`#${id}`); if (el) el.textContent = t; };
+  const all = state.allLedger?.findings ?? [];
+  const shown = list ?? all;
+  set("flowDiscover", `${shown.length} opportunit${shown.length === 1 ? "y" : "ies"}`);
+  set("flowUnderstand", `${shown.filter((f) => (f.requirements ?? []).length || f.workspace?.analysis).length} read in depth`);
+  set("flowQualify", `${shown.filter((f) => f.band === "pursue").length} high fit`);
+  set("flowAssign", `${shown.filter((f) => f.assignee).length} assigned`);
+  set("flowAnswer", `${shown.filter((f) => f.workspace?.answers).length} drafted`);
+  set("flowReview", `${shown.filter((f) => f.workspace?.redTeam?.readiness === "Ready").length} ready`);
+  set("flowExport", "Excel + proposal");
+  const ws = state.ws ?? state.aws;
+  const stage = !ws ? (state.sweepIds ? "qualify" : "discover") : ws.redTeam ? "export" : ws.answers ? "review" : ws.analysis ? (ws.finding?.assignee ? "answer" : "assign") : "understand";
+  const order = ["discover", "understand", "qualify", "assign", "answer", "review", "export"];
+  for (const li of document.querySelectorAll("#flowSteps li")) {
+    const i = order.indexOf(li.dataset.step), cur = order.indexOf(stage);
+    li.classList.toggle("active", i === cur);
+    li.classList.toggle("done", i < cur);
+  }
+}
+
 function renderSweepResults() {
   const box = $("#sResults");
   if (!box || !state.allLedger) return;
   const p = { industry: $("#sIndustry").value, geography: $("#sGeo").value, capability: $("#sCap").value, days: $("#sDays").value };
   const list = (state.sweepIds ? state.allLedger.findings.filter((f) => state.sweepIds.has(f.id)) : clientFilter(state.allLedger.findings, p)).sort((a, b) => b.score - a.score);
   const high = list.filter((f) => f.band === "pursue").length, review = list.filter((f) => f.band === "review").length;
+  renderFlow(state.sweepIds ? list : null);
   box.replaceChildren(
     h("div", { class: "results-head" },
       h("h2", {}, `${list.length} ${list.length === 1 ? "opportunity" : "opportunities"} found`),
@@ -559,7 +589,28 @@ function renderSweepResults() {
           h("td", {}, f.assignee || h("span", { class: "unassigned" }, f.team?.opportunityOwner ? `suggest: ${f.team.opportunityOwner}` : "unassigned")),
           h("td", {}, f.status),
           h("td", {}, h("button", { class: "primary small", onclick: () => openWorkspace(f, "#sWorkspace") }, "Open")));
-      })))) : h("p", { class: "empty" }, state.sweepIds ? "Nothing matched. Widen the date range, pick All capabilities, or choose another industry." : "Pick what you are looking for and press Run RFP Sweep."));
+      })))) : emptySweep(p));
+}
+
+function emptySweep(p) {
+  if (!state.sweepIds) return h("p", { class: "empty" }, "Pick what you are looking for and press Run RFP Sweep.");
+  const all = state.allLedger?.findings ?? [];
+  const label = (k, v) => ({ industry: v ? state.meta.industries.find((i) => i.id === v)?.name : "All industries", geography: state.meta.geographies.find((g) => g.id === v)?.label, capability: v ? state.meta.capabilities.find((c) => c.id === v)?.label : "All capabilities", days: state.meta.dateRanges.find((d) => d.id === v)?.label })[k];
+  const tries = [
+    ["capability", ""], ["days", "any"], ["geography", "na"], ["industry", ""],
+  ].filter(([k, v]) => p[k] !== v).map(([k, v]) => ({ k, v, n: clientFilter(all, { ...p, [k]: v }).length })).filter((t) => t.n > 0);
+  const ids = { industry: "sIndustry", geography: "sGeo", capability: "sCap", days: "sDays" };
+  const pack = state.meta.packs.find((x) => x.id === p.industry);
+  const geo = state.meta.geographies.find((g) => g.id === p.geography)?.countries ?? ["CA", "US"];
+  const portals = (pack?.channels ?? []).map((c) => state.meta.channels.find((x) => x.id === c.ref)).filter((c) => c && c.render !== "server" && (!c.country || geo.includes(c.country)));
+  return h("div", { class: "card empty-sweep" },
+    h("h3", {}, "Nothing matched in the latest sweep"),
+    tries.length ? [h("p", {}, "Opportunities do exist if you widen one filter:"),
+      h("div", { class: "row" }, ...tries.map((t) => h("button", { class: "keep", onclick: () => { $(`#${ids[t.k]}`).value = t.v; runSearch(); } }, `${label(t.k, t.v)}: ${t.n}`)))]
+      : h("p", {}, "No opportunities match even with wider filters in the latest sweep."),
+    portals.length ? [h("p", { class: "mt" }, `${pack.name} buyers mostly post on these portals, which block automated reading. Check them directly:`),
+      h("ul", { class: "plain portals" }, ...portals.map((c) => h("li", {}, h("a", { href: c.url, target: "_blank", rel: "noopener noreferrer" }, c.name), h("span", { class: "hint" }, ` · ${c.region ?? c.country ?? ""}${c.access !== "free" ? ` · ${c.access}` : ""}`))))] : null,
+    h("p", { class: "hint mt" }, "Found an RFP there? Download it and load it in Analyze a document for the full five-step analysis."));
 }
 
 // =================================================================== Workspace
@@ -641,6 +692,7 @@ async function patchFinding(ws, patch, msg) {
 function renderWorkspace(ws) {
   const box = $(ws.target);
   if (!box) return;
+  renderFlow(state.sweepIds && state.allLedger ? state.allLedger.findings.filter((f) => state.sweepIds.has(f.id)) : null);
   const a = ws.analysis, sc = a?.scores, f = ws.finding;
   const done = { qualify: f && f.status !== "New", assign: !!(f?.assignee), analyze: !!a, draft: !!ws.answers, redteam: !!ws.redTeam };
   const act = {

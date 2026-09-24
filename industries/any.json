@@ -58,11 +58,16 @@
     },
     {
       "ref": "ca.agg.merx",
-      "priority": 3
+      "priority": 1,
+      "note": "Public listing searched by keyword in a browser."
     },
     {
       "ref": "us.agg.bidnetdirect",
       "priority": 3
+    },
+    {
+      "ref": "ca.bc.civicinfo",
+      "priority": 2
     }
   ],
   "searchTerms": [

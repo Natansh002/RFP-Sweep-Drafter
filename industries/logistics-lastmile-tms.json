@@ -90,7 +90,8 @@
     },
     {
       "ref": "ca.agg.merx",
-      "priority": 3
+      "priority": 1,
+      "note": "Public listing searched by keyword in a browser."
     }
   ],
   "searchTerms": [

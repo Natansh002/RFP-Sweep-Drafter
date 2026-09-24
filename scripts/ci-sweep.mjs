@@ -18,6 +18,7 @@ import { ROOT, tenantIds, loadTenant } from "../lib/config.mjs";
 import { loadLedger, saveLedger, mergeRun } from "../lib/ledger.mjs";
 import { importWorkbook } from "../lib/excel.mjs";
 import { runSweep } from "../lib/sweep.mjs";
+import { closeBrowser } from "../lib/browser.mjs";
 
 const args = process.argv.slice(2);
 const SWEEP = !args.includes("--no-sweep");
@@ -73,6 +74,8 @@ for (const id of tenantIds()) {
   if (before !== ledger.findings.length) console.log(`pruned ${before - ledger.findings.length} closed, untouched finding(s)`);
   saveLedger(ROOT, ledger);
 }
+
+await closeBrowser();
 
 // 4. build
 execFileSync(process.execPath, [path.join(ROOT, "scripts", "build-site.mjs")], { stdio: "inherit" });

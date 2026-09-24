@@ -205,3 +205,27 @@ ul.blocking li { color: var(--danger); }
 .lbl { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
 @media (max-width: 800px) { .upload-grid { grid-template-columns: 1fr; } }
 [hidden] { display: none !important; }
+
+.empty-sweep h3 { margin-top: 0; }
+.empty-sweep .row { margin-top: 6px; }
+.portals li { padding: 3px 0; }
+
+/* ---- workflow strip */
+.flow { margin: 0 0 16px; }
+.flow-steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 0; }
+.flow-steps li { position: relative; display: flex; flex-direction: column; gap: 4px; padding: 12px 18px 12px 26px; background: var(--panel); border: 1px solid var(--line); border-left: 0; min-height: 124px;
+  clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 50%, calc(100% - 14px) 100%, 0 100%, 14px 50%); }
+.flow-steps li:first-child { border-left: 1px solid var(--line); padding-left: 14px; clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 50%, calc(100% - 14px) 100%, 0 100%); border-radius: var(--radius) 0 0 var(--radius); }
+.flow-steps li:last-child { clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%, 14px 50%); border-radius: 0 var(--radius) var(--radius) 0; }
+.flow-steps .ico { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--bg); color: var(--accent); font-size: 14px; font-weight: 700; }
+.flow-steps strong { font-size: 13px; }
+.flow-steps .what { font-size: 11.5px; line-height: 1.35; color: var(--muted); }
+.flow-steps .stat { margin-top: auto; font-size: 12px; font-weight: 650; color: var(--accent); font-variant-numeric: tabular-nums; }
+.flow-steps li.active { background: var(--edit); }
+.flow-steps li.active .ico { background: var(--accent); color: var(--accent-ink); }
+.flow-steps li.done .ico { background: var(--pursue-bg); color: var(--pursue); }
+@media (max-width: 1100px) {
+  .flow-steps { grid-template-columns: repeat(4, minmax(0, 1fr)); row-gap: 6px; }
+  .flow-steps li, .flow-steps li:first-child, .flow-steps li:last-child { clip-path: none; border: 1px solid var(--line); border-radius: var(--radius); min-height: 0; padding: 10px 12px; }
+}
+@media (max-width: 640px) { .flow-steps { grid-template-columns: 1fr 1fr; } }

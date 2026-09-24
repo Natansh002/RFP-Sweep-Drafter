@@ -1,7 +1,7 @@
 # Sweep, check and publish the findings site to GitHub Pages.
 #
 # Runs on every push to main (a config change, or a spreadsheet committed to
-# assignments/), on weekday mornings, and on demand. Nothing publishes unless
+# assignments/), every 6 hours, and on demand. Nothing publishes unless
 # the config validates and every test passes, the same gate as validate.yml.
 #
 # The job only makes GET requests to public procurement pages (through
@@ -14,7 +14,7 @@ on:
   push:
     branches: [main]
   schedule:
-    - cron: "0 13 * * 1-5"   # 09:00 Toronto (EDT) on weekdays
+    - cron: "0 */6 * * *"   # every 6 hours
   workflow_dispatch:
     inputs:
       width:
@@ -55,6 +55,11 @@ jobs:
 
       - name: Build, validate and test
         run: npm run check
+
+      # Headless Chromium for portals that render listings with JavaScript.
+      # A fresh profile every run; bot checks are reported, never bypassed.
+      - name: Install headless browser
+        run: npx playwright install --with-deps chromium
 
       - id: pages
         uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5

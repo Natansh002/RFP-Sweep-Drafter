@@ -51,7 +51,6 @@ for (const id of tenantIds()) {
 
 const meta = {
   mode: "static",
-  builtAt: new Date().toISOString(),
   repo: process.env.GITHUB_REPOSITORY ?? null,
   tenants,
   ...sharedMeta(),

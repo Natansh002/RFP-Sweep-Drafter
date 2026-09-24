@@ -8,10 +8,13 @@
  *   npm run sweep -- --tenant <company-id> --direct        also sweep watch-list sites
  *   npm run sweep -- --tenant <company-id> --dry-run       print, write nothing
  *   npm run sweep -- --tenant <company-id> --no-detail     do not read each posting's own page
+ *   npm run sweep -- --industry k12 --geo ca --capability payroll --days 30
+ *   npm run sweep -- --no-browser                           skip the headless-browser step
  *
  * Nothing leaves this machine except GET requests to public procurement pages.
  */
 import { runSweep } from "../lib/sweep.mjs";
+import { closeBrowser } from "../lib/browser.mjs";
 import { loadTenant, outputFile, ROOT, tenantIds } from "../lib/config.mjs";
 import { loadLedger, saveLedger, mergeRun } from "../lib/ledger.mjs";
 import { writeWorkbook } from "../lib/excel.mjs";
@@ -32,7 +35,7 @@ const dryRun = flag("dry-run");
 
 const ledger = loadLedger(ROOT, tenantId);
 for (const ind of industries) {
-  const run = await runSweep(tenantId, ind, { width, detail, direct: flag("direct"), log: (m) => console.log(m) });
+  const run = await runSweep(tenantId, ind, { width, detail, direct: flag("direct"), browser: !flag("no-browser"), geography: opt("geo") ?? null, capabilities: opt("capability") ? [opt("capability")] : [], sinceDays: opt("days") ? Number(opt("days")) : null, log: (m) => console.log(m) });
   console.log(`\n${ind}: ${run.postingsSeen} link(s) seen, ${run.findings.filter((f) => f.band === "pursue").length} pursue, ${run.findings.filter((f) => f.band === "review").length} review, ${run.gaps.length} coverage gap(s)`);
   if (run.skipped.length) console.log(`  skipped: ${run.skipped.join("; ")}`);
   if (run.caveat) console.log(`  CAVEAT: ${run.caveat}`);
@@ -43,6 +46,7 @@ for (const ind of industries) {
     console.log(`  ledger: ${added} new, ${refreshed} refreshed`);
   }
 }
+await closeBrowser();
 if (dryRun) { console.log("\nDry run: ledger and workbook not written."); process.exit(0); }
 saveLedger(ROOT, ledger);
 const file = await writeWorkbook(ledger, tenant, outputFile(tenantId));

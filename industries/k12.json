@@ -29,6 +29,11 @@
       "note": "Searched with this pack's searchTerms."
     },
     {
+      "ref": "ca.agg.merx",
+      "priority": 1,
+      "note": "Public listing searched by keyword in a browser."
+    },
+    {
       "ref": "ca.mash.bidsandtenders",
       "priority": 1,
       "note": "Highest yield. Most boards post here."
@@ -48,10 +53,6 @@
     },
     {
       "ref": "ca.sk.sasktenders",
-      "priority": 2
-    },
-    {
-      "ref": "ca.mb.merx",
       "priority": 2
     },
     {
