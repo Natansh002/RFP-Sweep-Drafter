@@ -1,0 +1,92 @@
+# Sweep, check and publish the findings site to GitHub Pages.
+#
+# Runs on every push to main (a config change, or a spreadsheet committed to
+# assignments/), on weekday mornings, and on demand. Nothing publishes unless
+# the config validates and every test passes, the same gate as validate.yml.
+#
+# The job only makes GET requests to public procurement pages (through
+# lib/guard.mjs) and to this site's own previous build. It files nothing,
+# sends nothing and links to no internal tool.
+
+name: pages
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 13 * * 1-5"   # 09:00 Toronto (EDT) on weekdays
+  workflow_dispatch:
+    inputs:
+      width:
+        description: "Channel width: 1 highest-yield, 2 normal, 3 everything"
+        default: "2"
+        required: false
+      sweep:
+        description: "Run the sweep (false = just re-publish with committed assignments)"
+        default: "true"
+        required: false
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build, validate and test
+        run: npm run check
+
+      - id: pages
+        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
+
+      - name: Restore, apply assignments, sweep, build site
+        env:
+          SITE_URL: ${{ steps.pages.outputs.base_url }}
+          SWEEP_WIDTH: ${{ github.event.inputs.width || '2' }}
+        run: |
+          if [ "${{ github.event.inputs.sweep }}" = "false" ]; then
+            node scripts/ci-sweep.mjs --no-sweep
+          else
+            node scripts/ci-sweep.mjs
+          fi
+
+      - name: Check the site before publishing
+        run: |
+          test -s site/index.html
+          test -s site/data/meta.json
+          node -e "
+            const fs=require('fs');
+            const m=JSON.parse(fs.readFileSync('site/data/meta.json','utf8'));
+            for (const t of m.tenants) { if (!fs.existsSync('site/data/'+t.id+'.json')) throw new Error('missing '+t.id); }
+            console.log('site ok:', m.tenants.map(t=>t.id+' '+t.findings).join(', '));
+          "
+
+      - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4

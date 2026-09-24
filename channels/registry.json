@@ -1,0 +1,272 @@
+{
+  "$comment": "Channel registry. Portals are declared ONCE here and referenced by id from industry packs, so a URL change is one edit rather than four. verified is the date a human last opened the URL. Anything unverified for 180 days is flagged by scripts/validate.mjs.",
+  "version": "1.0.0",
+  "lastReviewed": "2026-09-24",
+  "channels": [
+    {
+      "id": "ca.federal.canadabuys",
+      "name": "CanadaBuys",
+      "url": "https://canadabuys.canada.ca",
+      "level": "federal",
+      "country": "CA",
+      "access": "free",
+      "render": "server",
+      "verified": "2026-09-24"
+    },
+    {
+      "id": "ca.bc.bcbid",
+      "name": "BC Bid",
+      "url": "https://bcbid.gov.bc.ca",
+      "level": "provincial",
+      "country": "CA",
+      "region": "BC",
+      "access": "free",
+      "render": "client",
+      "covers": ["ministries", "crown corporations", "broader public sector"],
+      "verified": "2026-09-24"
+    },
+    {
+      "id": "ca.bc.civicinfo",
+      "name": "CivicInfo BC",
+      "url": "https://www.civicinfo.bc.ca/bids",
+      "level": "municipal",
+      "country": "CA",
+      "region": "BC",
+      "access": "free",
+      "render": "server",
+      "verified": "2026-09-24"
+    },
+    {
+      "id": "ca.ab.apc",
+      "name": "Alberta Purchasing Connection",
+      "url": "https://purchasing.alberta.ca",
+      "level": "provincial",
+      "country": "CA",
+      "region": "AB",
+      "access": "free",
+      "render": "client",
+      "covers": ["ministries", "municipal", "academic"],
+      "verified": "2026-09-24"
+    },
+    {
+      "id": "ca.sk.sasktenders",
+      "name": "SaskTenders",
+      "url": "https://sasktenders.ca",
+      "level": "provincial",
+      "country": "CA",
+      "region": "SK",
+      "access": "free",
+      "render": "client",
+      "verified": "2026-09-24"
+    },
+    {
+      "id": "ca.mb.merx",
+      "name": "MERX (Manitoba)",
+      "url": "https://manitoba.merx.com",
+      "level": "provincial",
+      "country": "CA",
+      "region": "MB",
+      "access": "partial",
+      "render": "client",
+      "note": "Free to view. MERX charges for document download on some plans.",
+      "verified": "2026-09-24"
+    },
+    {
+      "id": "ca.on.ontariotenders",
+      "name": "Ontario Tenders Portal",
+      "url": "https://ontariotenders.app.jaggaer.com",
+      "level": "provincial",
+      "country": "CA",
+      "region": "ON",
+      "access": "free",
+      "render": "client",
+      "note": "Supply Ontario holds the centralised contracts.",
+      "verified": "2026-09-24"
+    },
+    {
+      "id": "ca.qc.seao",
+      "name": "SEAO",
+      "url": "https://seao.gouv.qc.ca",
+      "level": "provincial",
+      "country": "CA",
+      "region": "QC",
+      "access": "free",
+      "render": "client",
+      "covers": ["provincial", "municipal", "public bodies"],
+      "language": "fr",
+      "verified": "2026-09-24"
+    },
+    {
+      "id": "ca.nb.nbon",
+      "name": "New Brunswick Opportunities Network",
+      "url": "https://nbon-rpanb.gnb.ca",
+      "level": "provincial",
+      "country": "CA",
+      "region": "NB",
+      "access": "free",
+      "render": "server",
+      "verified": "2026-09-24"
+    },
+    {
+      "id": "ca.ns.tenders",
+      "name": "Nova Scotia Tenders",
+      "url": "https://novascotia.ca/tenders",
+      "level": "provincial",
+      "country": "CA",
+      "region": "NS",
+      "access": "free",
+      "render": "server",
+      "verified": "2026-09-24"
+    },
+    {
+      "id": "ca.pe.tenders",
+      "name": "PEI Tenders",
+      "url": "https://tenders.princeedwardisland.ca",
+      "level": "provincial",
+      "country": "CA",
+      "region": "PE",
+      "access": "free",
+      "render": "server",
+      "verified": "2026-09-24"
+    },
+    {
+      "id": "ca.nl.ppa",
+      "name": "Newfoundland and Labrador Public Procurement Agency (via MERX)",
+      "url": "https://merx4.merx.com/govnl",
+      "level": "provincial",
+      "country": "CA",
+      "region": "NL",
+      "access": "free",
+      "render": "client",
+      "verified": "2026-09-24"
+    },
+    {
+      "id": "ca.yt.bidsandtenders",
+      "name": "Yukon bids&tenders",
+      "url": "https://yukon.bidsandtenders.ca",
+      "level": "territorial",
+      "country": "CA",
+      "region": "YT",
+      "access": "free",
+      "render": "client",
+      "verified": "2026-09-24"
+    },
+    {
+      "id": "ca.nt.contracts",
+      "name": "GNWT Contract Opportunities",
+      "url": "https://contracts.fin.gov.nt.ca",
+      "level": "territorial",
+      "country": "CA",
+      "region": "NT",
+      "access": "free",
+      "render": "server",
+      "verified": "2026-09-24"
+    },
+    {
+      "id": "ca.nu.tenders",
+      "name": "Nunavut Tenders",
+      "url": "https://nunavuttenders.ca",
+      "level": "territorial",
+      "country": "CA",
+      "region": "NU",
+      "access": "free",
+      "render": "server",
+      "verified": "2026-09-24"
+    },
+    {
+      "id": "ca.mash.bidsandtenders",
+      "name": "bids&tenders",
+      "url": "https://www.bidsandtenders.ca",
+      "level": "mash",
+      "country": "CA",
+      "access": "free",
+      "render": "client",
+      "covers": ["municipalities", "school boards", "public agencies"],
+      "note": "The single highest-yield MASH channel. Hundreds of Canadian municipalities and school boards post here.",
+      "verified": "2026-09-24"
+    },
+    {
+      "id": "ca.agg.merx",
+      "name": "MERX",
+      "url": "https://www.merx.com",
+      "level": "aggregator",
+      "country": "CA",
+      "access": "paid",
+      "render": "client",
+      "covers": ["federal", "provincial", "mash"],
+      "verified": "2026-09-24"
+    },
+    {
+      "id": "ca.agg.biddingo",
+      "name": "Biddingo",
+      "url": "https://www.biddingo.com",
+      "level": "aggregator",
+      "country": "CA",
+      "access": "paid",
+      "render": "client",
+      "covers": ["municipal", "mash"],
+      "verified": "2026-09-24"
+    },
+    {
+      "id": "coop.oecm",
+      "name": "OECM",
+      "url": "https://oecm.ca",
+      "level": "cooperative",
+      "country": "CA",
+      "access": "free",
+      "render": "server",
+      "note": "Ontario education and broader public sector collaborative marketplace. An OECM agreement can substitute for a board-by-board RFP, so a missed OECM RFS closes many boards at once.",
+      "verified": "2026-09-24"
+    },
+    {
+      "id": "coop.canoe",
+      "name": "Canoe Procurement Group",
+      "url": "https://canoeprocurement.ca",
+      "level": "cooperative",
+      "country": "CA",
+      "access": "free",
+      "render": "server",
+      "verified": "2026-09-24"
+    },
+    {
+      "id": "us.federal.sam",
+      "name": "SAM.gov",
+      "url": "https://sam.gov/contracting",
+      "level": "federal",
+      "country": "US",
+      "access": "free",
+      "render": "client",
+      "api": "https://open.gsa.gov/api/get-opportunities-public-api/",
+      "note": "Has a public Opportunities API. Prefer the API over scraping the UI.",
+      "verified": "2026-09-24"
+    },
+    {
+      "id": "us.agg.bidnetdirect",
+      "name": "BidNet Direct",
+      "url": "https://www.bidnetdirect.com",
+      "level": "aggregator",
+      "country": "US",
+      "access": "paid",
+      "render": "client",
+      "covers": ["state", "local", "education"],
+      "verified": "2026-09-24"
+    },
+    {
+      "id": "us.state.portals",
+      "name": "US state procurement portals",
+      "url": "https://www.govbidportals.com",
+      "level": "state",
+      "country": "US",
+      "access": "free",
+      "render": "mixed",
+      "note": "Directory of all 50 state portals. Each state is its own endpoint; add the ones a tenant actually sells into rather than all 50.",
+      "verified": "2026-09-24"
+    }
+  ],
+  "sources": [
+    "https://jorpex.com/sources/canada-provincial-portals/",
+    "https://bidfit.ca/guides/how-to-find-canadian-government-tenders",
+    "https://sam.gov/contracting",
+    "https://www.govbidportals.com/"
+  ]
+}

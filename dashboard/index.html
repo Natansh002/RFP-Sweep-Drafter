@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>RFP Findings</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <h1>RFP findings</h1>
+      <span class="sub">Sweep, draft and assign. Local only, nothing is filed in Jira or Confluence.</span>
+    </div>
+    <div class="controls">
+      <label>Company
+        <select id="tenant"></select>
+      </label>
+      <label>Your role
+        <input id="me" list="team" placeholder="your role" autocomplete="off">
+      </label>
+    </div>
+  </header>
+
+  <section class="toolbar">
+    <div class="group">
+      <select id="sweepIndustry" aria-label="Industry to sweep"></select>
+      <select id="sweepWidth" aria-label="How wide">
+        <option value="1">Width 1: highest-yield</option>
+        <option value="2" selected>Width 2: normal</option>
+        <option value="3">Width 3: everything</option>
+      </select>
+      <label class="check"><input type="checkbox" id="sweepDirect"> Watch-list sites</label>
+      <button id="runSweep" class="primary">Run sweep</button>
+    </div>
+    <div class="group">
+      <button id="exportXlsx">Download Excel</button>
+      <button id="exportIcs">Deadlines (.ics)</button>
+      <label class="button">Import Excel<input type="file" id="importXlsx" accept=".xlsx" hidden></label>
+      <label class="button">Import n8n run<input type="file" id="importRun" accept=".json" hidden></label>
+    </div>
+  </section>
+
+  <section class="kpis" id="kpis"></section>
+
+  <nav class="tabs" role="tablist">
+    <button role="tab" data-tab="findings" class="active">Findings</button>
+    <button role="tab" data-tab="actions">Action items</button>
+    <button role="tab" data-tab="coverage">Coverage &amp; runs</button>
+  </nav>
+
+  <main>
+    <section id="tab-findings" class="tab">
+      <div class="filters">
+        <input id="q" type="search" placeholder="Search title, buyer, notes">
+        <select id="fIndustry"><option value="">All industries</option></select>
+        <select id="fBand"><option value="">All bands</option><option value="pursue">Pursue</option><option value="review">Review</option></select>
+        <select id="fStatus"><option value="">Open statuses</option><option value="*">Any status</option></select>
+        <select id="fAssignee"><option value="">Anyone</option><option value="__none">Unassigned</option></select>
+        <label class="check"><input type="checkbox" id="fChanged"> Changed since last sweep</label>
+      </div>
+      <div class="tablewrap">
+        <table class="grid" id="findings">
+          <thead><tr>
+            <th class="num">Score</th><th>Opportunity</th><th>Industry</th><th>Closes</th><th>Status</th><th>Assignee</th><th class="num">Actions</th><th></th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p class="empty" id="findingsEmpty" hidden>No findings match. Run a sweep, or widen the filters.</p>
+    </section>
+
+    <section id="tab-actions" class="tab" hidden>
+      <div class="filters">
+        <select id="aAssignee"><option value="">Anyone</option><option value="__me">Mine</option><option value="__none">Unassigned</option></select>
+        <label class="check"><input type="checkbox" id="aShowDone"> Show done</label>
+      </div>
+      <div class="tablewrap">
+        <table class="grid" id="actions">
+          <thead><tr><th>Done</th><th>Action</th><th>Opportunity</th><th>Assignee</th><th>Due</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p class="empty" id="actionsEmpty" hidden>No action items.</p>
+    </section>
+
+    <section id="tab-coverage" class="tab" hidden>
+      <h2>Coverage gaps</h2>
+      <p class="hint">Channels the last sweep could not read. A gap is a blind spot, not "no opportunities".</p>
+      <div class="tablewrap"><table class="grid" id="gaps"><thead><tr><th>Industry</th><th>Channel</th><th>Status</th><th>Detail</th></tr></thead><tbody></tbody></table></div>
+      <h2>Runs</h2>
+      <div class="tablewrap"><table class="grid" id="runs"><thead><tr><th>When</th><th>Industry</th><th>Source</th><th class="num">Seen</th><th class="num">Pursue</th><th class="num">Review</th><th class="num">New</th><th class="num">Gaps</th><th>Note</th></tr></thead><tbody></tbody></table></div>
+    </section>
+  </main>
+
+  <datalist id="team"></datalist>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <script src="/app.js"></script>
+</body>
+</html>

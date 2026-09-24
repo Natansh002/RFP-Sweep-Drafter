@@ -1,0 +1,169 @@
+{
+  "id": "logistics-freight-fleet",
+  "name": "Freight, fleet and warehouse operations software",
+  "status": "unvalidated",
+  "statusNote": "The broader logistics pack, kept separate from logistics-lastmile-tms because the buyers and the disqualifier lists genuinely differ. No Ionic operating company is wired to this pack today. It ships as a working starting point, not as a validated channel set. Enable it only when an opco claims it.",
+  "lastReviewed": "2026-09-24",
+  "geography": [
+    "US",
+    "CA"
+  ],
+  "buyerTypes": [
+    "port authority",
+    "transit authority",
+    "municipal and regional fleet operator",
+    "provincial and state transportation department",
+    "distribution centre operator",
+    "manufacturer with private fleet",
+    "grocery and retail distribution",
+    "utility with service fleet",
+    "3PL and warehousing provider"
+  ],
+  "channels": [
+    {
+      "ref": "us.federal.sam",
+      "priority": 1
+    },
+    {
+      "ref": "ca.federal.canadabuys",
+      "priority": 1
+    },
+    {
+      "ref": "ca.mash.bidsandtenders",
+      "priority": 1
+    },
+    {
+      "ref": "us.agg.bidnetdirect",
+      "priority": 2
+    },
+    {
+      "ref": "us.state.portals",
+      "priority": 2
+    },
+    {
+      "ref": "ca.bc.bcbid",
+      "priority": 2
+    },
+    {
+      "ref": "ca.ab.apc",
+      "priority": 2
+    },
+    {
+      "ref": "ca.on.ontariotenders",
+      "priority": 2
+    },
+    {
+      "ref": "ca.qc.seao",
+      "priority": 3
+    },
+    {
+      "ref": "ca.agg.merx",
+      "priority": 3
+    }
+  ],
+  "directSites": {
+    "note": "Port and transit authority procurement pages. Most run their own portal rather than posting to a provincial or state one.",
+    "cadence": "monthly",
+    "seedFrom": "data/freight-authority-watch.json"
+  },
+  "qualifiers": {
+    "titleKeywords": [
+      "transportation management system",
+      "TMS",
+      "fleet management software",
+      "fleet telematics",
+      "warehouse management system",
+      "WMS",
+      "yard management",
+      "dock scheduling",
+      "logistics software",
+      "supply chain software",
+      "route planning software",
+      "dispatch system",
+      "asset tracking",
+      "GPS telematics",
+      "freight audit and payment"
+    ],
+    "bodyKeywords": [
+      "load planning",
+      "linehaul",
+      "backhaul",
+      "hours of service",
+      "ELD",
+      "DVIR",
+      "preventive maintenance",
+      "work order",
+      "fuel card",
+      "IFTA",
+      "dock door",
+      "appointment scheduling",
+      "EDI 204",
+      "EDI 214",
+      "API integration",
+      "SOC 2"
+    ],
+    "must": [
+      "the solicitation buys software or a software-led service",
+      "scope is freight, fleet or warehouse operations rather than last-mile courier"
+    ]
+  },
+  "disqualifiers": [
+    "vehicle purchase",
+    "truck purchase",
+    "bus purchase",
+    "vehicle leasing",
+    "fuel supply",
+    "tires",
+    "vehicle parts",
+    "vehicle repair services",
+    "road construction",
+    "paving",
+    "bridge",
+    "rail infrastructure",
+    "warehouse construction",
+    "racking",
+    "forklift",
+    "conveyor",
+    "driver staffing agency",
+    "temporary labour",
+    "freight brokerage services",
+    "customs brokerage",
+    "moving and relocation services",
+    "courier services",
+    "medical courier",
+    "last mile delivery"
+  ],
+  "thresholds": {
+    "note": "Same trade-agreement floors as the other Canadian packs. US floors move and are not recorded here.",
+    "values": [
+      {
+        "regime": "NWPTA",
+        "currency": "CAD",
+        "amount": 75000,
+        "appliesTo": "BC, AB, SK, MB goods and services"
+      }
+    ]
+  },
+  "scoring": {
+    "weights": {
+      "productFit": 35,
+      "buyerFit": 15,
+      "dealSize": 20,
+      "timeline": 10,
+      "incumbent": 10,
+      "geography": 10
+    },
+    "weightsNote": "dealSize is weighted higher. Public fleet and warehouse systems are larger and slower than last-mile, so a small one is rarely worth the capture cost.",
+    "minScoreToPursue": 60,
+    "autoNoBidBelow": 35
+  },
+  "openQuestions": [
+    "Does any Ionic operating company sell into freight, fleet or warehouse operations? If not, this pack should stay disabled rather than be swept on speculation.",
+    "The overlap with logistics-lastmile-tms on the phrase 'transportation management system' is deliberate. Each pack disqualifies the other's core scope, so a hit landing in both means one of the two disqualifier lists needs tightening. Watch for that during calibration."
+  ],
+  "sources": [
+    "https://sam.gov/contracting",
+    "https://jorpex.com/sources/canada-provincial-portals/",
+    "https://www.govbidportals.com/"
+  ]
+}

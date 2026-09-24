@@ -1,0 +1,172 @@
+{
+  "id": "k12",
+  "name": "K-12 school boards and districts",
+  "status": "proven",
+  "statusNote": "Channels and thresholds carried over from a live K-12 sweep that has run against real bids. Company-neutral: product lines, owners and watch lists live in each tenant's offerings.",
+  "lastReviewed": "2026-09-24",
+  "geography": [
+    "CA",
+    "US"
+  ],
+  "buyerTypes": [
+    "school board",
+    "school district",
+    "school division",
+    "conseil scolaire",
+    "education authority",
+    "First Nations education authority",
+    "independent school association"
+  ],
+  "channels": [
+    {
+      "ref": "ca.mash.bidsandtenders",
+      "priority": 1,
+      "note": "Highest yield. Most boards post here."
+    },
+    {
+      "ref": "coop.oecm",
+      "priority": 1,
+      "note": "One OECM RFS can close many Ontario boards at once. Missing it is the expensive miss."
+    },
+    {
+      "ref": "ca.bc.bcbid",
+      "priority": 2
+    },
+    {
+      "ref": "ca.ab.apc",
+      "priority": 2
+    },
+    {
+      "ref": "ca.sk.sasktenders",
+      "priority": 2
+    },
+    {
+      "ref": "ca.mb.merx",
+      "priority": 2
+    },
+    {
+      "ref": "ca.on.ontariotenders",
+      "priority": 2
+    },
+    {
+      "ref": "ca.qc.seao",
+      "priority": 3,
+      "note": "French-language portal. Priority 3 so it only runs on a wide sweep; a tenant that does not sell into Quebec can list it in excludeChannels."
+    },
+    {
+      "ref": "coop.canoe",
+      "priority": 3
+    },
+    {
+      "ref": "ca.bc.civicinfo",
+      "priority": 3
+    },
+    {
+      "ref": "us.agg.bidnetdirect",
+      "priority": 3
+    }
+  ],
+  "directSites": {
+    "note": "Boards below the posting threshold never reach a portal. These are swept directly. Populate per province from the tenant's target list.",
+    "cadence": "monthly",
+    "seedFrom": "data/k12-board-sites.json"
+  },
+  "qualifiers": {
+    "titleKeywords": [
+      "enterprise resource planning",
+      "ERP",
+      "financial management system",
+      "financial system",
+      "human resources information system",
+      "HRIS",
+      "HRMS",
+      "payroll system",
+      "payroll services",
+      "student information system",
+      "SIS",
+      "accounting software",
+      "general ledger",
+      "budgeting software",
+      "budget system",
+      "scheduling and absence",
+      "absence management",
+      "time and attendance"
+    ],
+    "bodyKeywords": [
+      "chart of accounts",
+      "fund accounting",
+      "position control",
+      "collective agreement",
+      "seniority",
+      "T4",
+      "ROE",
+      "employee self service",
+      "manager self service",
+      "requisition",
+      "purchase order",
+      "procure to pay"
+    ],
+    "must": [
+      "buyer is an education body",
+      "solicitation is for software or an implementation of software"
+    ]
+  },
+  "disqualifiers": [
+    "student transportation",
+    "bussing",
+    "bus routing",
+    "construction",
+    "roofing",
+    "HVAC",
+    "asphalt",
+    "paving",
+    "janitorial",
+    "custodial services",
+    "snow removal",
+    "food services",
+    "cafeteria",
+    "milk program",
+    "textbooks",
+    "library materials",
+    "furniture",
+    "photocopier",
+    "printing services",
+    "insurance brokerage",
+    "legal services",
+    "audit services",
+    "teacher recruitment agency",
+    "supply teacher staffing"
+  ],
+  "thresholds": {
+    "note": "Below these a buyer may award without a public posting. Anything under them will never appear on a portal, which is why directSites exists.",
+    "values": [
+      {
+        "regime": "Ontario BPS Procurement Directive",
+        "currency": "CAD",
+        "amount": 100000,
+        "appliesTo": "Ontario broader public sector, goods and services"
+      },
+      {
+        "regime": "NWPTA",
+        "currency": "CAD",
+        "amount": 75000,
+        "appliesTo": "BC, AB, SK, MB goods and services"
+      }
+    ]
+  },
+  "scoring": {
+    "weights": {
+      "productFit": 35,
+      "buyerFit": 20,
+      "dealSize": 15,
+      "timeline": 10,
+      "incumbent": 10,
+      "geography": 10
+    },
+    "minScoreToPursue": 55,
+    "autoNoBidBelow": 30
+  },
+  "sources": [
+    "https://jorpex.com/sources/canada-provincial-portals/"
+  ]
+}

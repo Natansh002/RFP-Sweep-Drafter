@@ -1,0 +1,214 @@
+#!/usr/bin/env node
+/**
+ * The findings dashboard. Replaces ticket filing: findings, owners and action
+ * items are tracked here and in the Excel workbook, nowhere else.
+ *
+ *   npm run dashboard            http://127.0.0.1:4173
+ *   PORT=5000 npm run dashboard
+ *
+ * Security posture, on purpose:
+ *   - binds to 127.0.0.1 only, and rejects any Host header that is not localhost
+ *     (stops DNS-rebinding pages from driving it)
+ *   - every write needs the X-RFP-Dashboard header, which a cross-site form or
+ *     fetch cannot send without a CORS preflight this server never answers
+ *   - strict Content-Security-Policy: no external scripts, styles, fonts or frames
+ *   - no outbound calls except a sweep's GETs to public procurement pages, which
+ *     go through lib/guard.mjs like every other fetch
+ */
+import http from "node:http";
+import fs from "node:fs";
+import path from "node:path";
+import { ROOT, tenantIds, loadTenant, loadPack, loadData, outputFile } from "../lib/config.mjs";
+import { matchLibrary } from "../lib/library.mjs";
+import { loadLedger, saveLedger, mergeRun, updateFinding, addAction, updateAction, getFinding, STATUSES } from "../lib/ledger.mjs";
+import { workbookBuffer, importWorkbook, writeWorkbook } from "../lib/excel.mjs";
+import { runSweep } from "../lib/sweep.mjs";
+import { effectivePack } from "../lib/pack.mjs";
+import { draftResponse } from "../lib/draft.mjs";
+import { safeLink } from "../lib/guard.mjs";
+import { buildCalendar } from "../lib/ics.mjs";
+import { DEFAULT_GO_NO_GO, COMPLIANCE_STATUSES } from "../lib/ledger.mjs";
+
+const PORT = Number(process.env.PORT ?? 4173);
+const HOST = "127.0.0.1";
+const STATIC = { "/": "index.html", "/app.js": "app.js", "/style.css": "style.css" };
+const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8" };
+const CSP = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+
+// One write at a time per tenant, so two tabs cannot interleave a load/modify/save.
+const locks = new Map();
+async function withLedger(tenantId, fn) {
+  const prev = locks.get(tenantId) ?? Promise.resolve();
+  let release;
+  const next = new Promise((r) => (release = r));
+  locks.set(tenantId, prev.then(() => next));
+  await prev;
+  try {
+    const ledger = loadLedger(ROOT, tenantId);
+    const out = await fn(ledger);
+    saveLedger(ROOT, ledger);
+    return out;
+  } finally {
+    release();
+  }
+}
+
+function send(res, status, body, headers = {}) {
+  const isBuf = Buffer.isBuffer(body);
+  res.writeHead(status, {
+    "content-type": isBuf ? headers["content-type"] ?? "application/octet-stream" : "application/json; charset=utf-8",
+    "content-security-policy": CSP,
+    "x-content-type-options": "nosniff",
+    "referrer-policy": "no-referrer",
+    "cache-control": "no-store",
+    ...headers,
+  });
+  res.end(isBuf ? body : JSON.stringify(body));
+}
+
+function readBody(req, limit = 25 * 1024 * 1024) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let n = 0;
+    req.on("data", (c) => { n += c.length; if (n > limit) { reject(Object.assign(new Error("Upload too large"), { status: 413 })); req.destroy(); } else chunks.push(c); });
+    req.on("end", () => resolve(Buffer.concat(chunks)));
+    req.on("error", reject);
+  });
+}
+const json = async (req) => { const b = await readBody(req, 2 * 1024 * 1024); return b.length ? JSON.parse(b.toString("utf8")) : {}; };
+
+function tenantSummary(id) {
+  const t = loadTenant(id);
+  return {
+    id: t.id, name: t.name, status: t.status, industries: t.industries,
+    team: (t.team ?? []).map((m) => (typeof m === "string" ? { name: m } : m)).filter((m) => m.name),
+    defaultOwner: t.owners?.default ?? "",
+    goNoGo: t.goNoGo ?? DEFAULT_GO_NO_GO,
+  };
+}
+
+const routes = [
+  ["GET", /^\/api\/meta$/, async () => ({ tenants: tenantIds().map(tenantSummary), statuses: STATUSES, complianceStatuses: COMPLIANCE_STATUSES })],
+
+  ["GET", /^\/api\/ledger$/, async (req, u) => loadLedger(ROOT, tenantParam(u))],
+
+  ["PATCH", /^\/api\/findings\/([\w-]+)$/, async (req, u, [id]) => {
+    const body = await json(req);
+    return withLedger(tenantParam(u), (l) => updateFinding(l, id, body, { expectedRev: body.rev, by: actor(req) }));
+  }],
+
+  ["POST", /^\/api\/findings\/([\w-]+)\/actions$/, async (req, u, [id]) => {
+    const body = await json(req);
+    return withLedger(tenantParam(u), (l) => addAction(l, id, body, { by: actor(req) }));
+  }],
+
+  ["PATCH", /^\/api\/findings\/([\w-]+)\/actions\/([\w-]+)$/, async (req, u, [id, aid]) => {
+    const body = await json(req);
+    return withLedger(tenantParam(u), (l) => updateAction(l, id, aid, body, { expectedRev: body.rev }));
+  }],
+
+  // The drafter on demand: a "review" finding someone has decided to look at properly.
+  ["POST", /^\/api\/findings\/([\w-]+)\/draft$/, async (req, u, [id]) => {
+    const tid = tenantParam(u);
+    const tenant = loadTenant(tid);
+    return withLedger(tid, (l) => {
+      const f = getFinding(l, id);
+      if (f.draftEdited) throw Object.assign(new Error("This draft has been edited by a person; it will not be regenerated over their work."), { status: 409 });
+      const pack = effectivePack(loadPack(f.industry), tenant);
+      const library = matchLibrary(loadData(`library/${tid}.json`)?.entries ?? [], `${f.title} ${(f.requirements ?? []).map((r) => r.text).join(" ")}`, f.industry);
+      f.draft = { ...(f.draft ?? {}), response: draftResponse(f, pack, tenant, library) };
+      f.libraryMatches = library.map((l) => ({ id: l.id, stale: l.stale }));
+      return f;
+    });
+  }],
+
+  ["POST", /^\/api\/sweep$/, async (req, u) => {
+    const body = await json(req);
+    const tid = tenantParam(u);
+    const tenant = loadTenant(tid);
+    const industries = body.industry ? [body.industry] : tenant.industries;
+    const log = [];
+    const summary = await withLedger(tid, async (l) => {
+      const out = [];
+      for (const ind of industries) {
+        const run = await runSweep(tid, ind, { width: Number(body.width ?? 2), direct: !!body.direct, log: (m) => log.push(m), source: "dashboard" });
+        out.push({ industry: ind, ...mergeRun(l, run), halted: run.halted, haltReason: run.haltReason, gaps: run.gaps.length, caveat: run.caveat });
+      }
+      return out;
+    });
+    await writeWorkbook(loadLedger(ROOT, tid), tenant, outputFile(tid));
+    return { summary, log };
+  }],
+
+  ["GET", /^\/api\/export\.xlsx$/, async (req, u) => {
+    const tid = tenantParam(u);
+    const buf = await workbookBuffer(loadLedger(ROOT, tid), loadTenant(tid));
+    return { __file: buf, type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", name: `${tid}-rfp-findings-${new Date().toISOString().slice(0, 10)}.xlsx` };
+  }],
+
+  ["GET", /^\/api\/calendar\.ics$/, async (req, u) => {
+    const tid = tenantParam(u);
+    return { __file: Buffer.from(buildCalendar(loadLedger(ROOT, tid), loadTenant(tid))), type: "text/calendar; charset=utf-8", name: `${tid}-rfp-deadlines.ics` };
+  }],
+
+  ["POST", /^\/api\/import$/, async (req, u) => {
+    const tid = tenantParam(u);
+    const buf = await readBody(req);
+    if (buf.subarray(0, 2).toString() !== "PK") throw Object.assign(new Error("That is not an .xlsx file."), { status: 400 });
+    const result = await withLedger(tid, (l) => importWorkbook(l, buf, { by: actor(req) ? `${actor(req)} (excel)` : "excel" }));
+    await writeWorkbook(loadLedger(ROOT, tid), loadTenant(tid), outputFile(tid));
+    return result;
+  }],
+
+  // A findings file produced by the n8n workflow (its "findings.json" output), uploaded by a person.
+  ["POST", /^\/api\/import-run$/, async (req, u) => {
+    const tid = tenantParam(u);
+    const run = JSON.parse((await readBody(req, 10 * 1024 * 1024)).toString("utf8"));
+    if (run.tenant !== tid) throw Object.assign(new Error(`That run file is for "${run.tenant}", not "${tid}".`), { status: 400 });
+    if (!Array.isArray(run.findings)) throw Object.assign(new Error("Not a sweeper run file: no findings array."), { status: 400 });
+    for (const f of run.findings) f.url = safeLink(f.url);
+    const r = await withLedger(tid, (l) => mergeRun(l, { ...run, source: "n8n", gaps: run.gaps ?? [] }));
+    await writeWorkbook(loadLedger(ROOT, tid), loadTenant(tid), outputFile(tid));
+    return r;
+  }],
+];
+
+function tenantParam(u) {
+  const id = u.searchParams.get("tenant") ?? "";
+  if (!tenantIds().includes(id)) throw Object.assign(new Error(`Unknown tenant "${id}"`), { status: 400 });
+  return id;
+}
+const actor = (req) => String(req.headers["x-rfp-user"] ?? "").slice(0, 80).replace(/[^\p{L}\p{N} .'@_-]/gu, "") || null;
+
+const server = http.createServer(async (req, res) => {
+  try {
+    const host = String(req.headers.host ?? "");
+    if (!new RegExp(`^(127\\.0\\.0\\.1|localhost|\\[::1\\]):${PORT}$`).test(host)) return send(res, 421, { error: "Unexpected Host header" });
+    const u = new URL(req.url, `http://${host}`);
+
+    if (req.method === "GET" && STATIC[u.pathname]) {
+      const file = path.join(ROOT, "dashboard", STATIC[u.pathname]);
+      return send(res, 200, fs.readFileSync(file), { "content-type": TYPES[path.extname(file)] });
+    }
+
+    if (req.method !== "GET" && req.headers["x-rfp-dashboard"] !== "1") return send(res, 403, { error: "Missing X-RFP-Dashboard header" });
+
+    for (const [method, re, fn] of routes) {
+      const m = req.method === method && u.pathname.match(re);
+      if (!m) continue;
+      const out = await fn(req, u, m.slice(1));
+      if (out?.__file) return send(res, 200, out.__file, { "content-type": out.type, "content-disposition": `attachment; filename="${out.name}"` });
+      return send(res, 200, out);
+    }
+    send(res, 404, { error: "Not found" });
+  } catch (e) {
+    const status = e.status ?? (e.code === "CONFLICT" ? 409 : e.code === "NOT_FOUND" ? 404 : e instanceof SyntaxError ? 400 : 500);
+    if (status === 500) console.error(e);
+    send(res, status, { error: e.message });
+  }
+});
+
+server.listen(PORT, HOST, () => {
+  console.log(`RFP findings dashboard: http://${HOST}:${PORT}`);
+  console.log(`Tenants: ${tenantIds().join(", ")}. Local only; nothing is sent to Jira, Confluence or any other internal tool.`);
+});

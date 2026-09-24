@@ -1,0 +1,200 @@
+{
+  "id": "logistics-lastmile-tms",
+  "name": "Last-mile and courier transportation management software",
+  "status": "unvalidated",
+  "statusNote": "Last-mile courier and delivery-management market. The channels are real and verified. The keyword sets have NOT been run against live hit rates, so treat the first two sweeps as calibration and expect to cut the qualifier list. Do not present this pack's yield as comparable to a proven pack.",
+  "lastReviewed": "2026-09-24",
+  "geography": [
+    "US",
+    "CA"
+  ],
+  "buyerProfile": {
+    "note": "Two distinct buyers, and they behave differently. Keep them apart when reading results.",
+    "buyers": [
+      {
+        "type": "carrier",
+        "description": "The courier, 3PL, LTL or distribution business buying a TMS to run its own operation. Mostly private, rarely posts a public RFP, and is reached through sales rather than a sweep.",
+        "sweepValue": "low"
+      },
+      {
+        "type": "shipper",
+        "description": "The hospital, health authority, pharmacy chain, retailer, grocer or public body buying delivery capability, and increasingly the software that runs it. This is the buyer that posts publicly, and it is what this pack sweeps for.",
+        "sweepValue": "high"
+      }
+    ]
+  },
+  "buyerTypes": [
+    "hospital",
+    "health authority",
+    "regional health network",
+    "clinical laboratory",
+    "diagnostic network",
+    "blood services",
+    "pharmacy chain",
+    "pharmacy benefit organisation",
+    "retailer",
+    "grocer",
+    "postal and parcel operator",
+    "transit authority",
+    "municipality",
+    "county",
+    "state and provincial agency",
+    "distribution and 3PL"
+  ],
+  "channels": [
+    {
+      "ref": "us.federal.sam",
+      "priority": 1,
+      "note": "Has a public Opportunities API. Use the API, not the UI. Highest-signal channel for this pack."
+    },
+    {
+      "ref": "us.agg.bidnetdirect",
+      "priority": 1,
+      "note": "State, local and education. Where US hospital and municipal courier RFPs surface."
+    },
+    {
+      "ref": "ca.mash.bidsandtenders",
+      "priority": 1,
+      "note": "Canadian health authorities and municipalities."
+    },
+    {
+      "ref": "us.state.portals",
+      "priority": 2,
+      "note": "Add only the states the tenant sells into. Do not enable all 50."
+    },
+    {
+      "ref": "ca.bc.bcbid",
+      "priority": 2
+    },
+    {
+      "ref": "ca.ab.apc",
+      "priority": 2
+    },
+    {
+      "ref": "ca.on.ontariotenders",
+      "priority": 2
+    },
+    {
+      "ref": "ca.federal.canadabuys",
+      "priority": 3
+    },
+    {
+      "ref": "ca.agg.merx",
+      "priority": 3
+    }
+  ],
+  "directSites": {
+    "note": "Health authority and hospital group procurement pages, and the large pharmacy and grocery chains. These publish on their own sites as often as on a portal.",
+    "cadence": "weekly",
+    "seedFrom": "data/lastmile-shipper-watch.json"
+  },
+  "qualifiers": {
+    "titleKeywords": [
+      "transportation management system",
+      "TMS",
+      "last mile delivery",
+      "last-mile",
+      "courier services",
+      "courier management",
+      "medical courier",
+      "specimen transport",
+      "lab courier",
+      "pharmacy delivery",
+      "prescription delivery",
+      "delivery management software",
+      "dispatch software",
+      "route optimization",
+      "routing and scheduling software",
+      "fleet dispatch",
+      "driver management",
+      "proof of delivery",
+      "parcel tracking",
+      "final mile",
+      "white glove delivery"
+    ],
+    "bodyKeywords": [
+      "chain of custody",
+      "temperature controlled",
+      "cold chain",
+      "STAT delivery",
+      "on-demand delivery",
+      "scheduled route",
+      "proof of delivery",
+      "electronic signature capture",
+      "driver mobile application",
+      "barcode scan",
+      "HIPAA",
+      "PHIPA",
+      "PIPEDA",
+      "dispatch board",
+      "manifest",
+      "linehaul",
+      "customer portal",
+      "API integration",
+      "EDI",
+      "SOC 2"
+    ],
+    "must": [
+      "the solicitation buys software, or a delivery service where the software platform is evaluated",
+      "scope is last-mile, courier, or final-mile rather than long-haul freight"
+    ]
+  },
+  "disqualifiers": [
+    "long haul trucking",
+    "over the road",
+    "OTR freight",
+    "drayage",
+    "freight brokerage",
+    "freight forwarding",
+    "customs brokerage",
+    "ocean freight",
+    "air cargo charter",
+    "rail",
+    "warehouse construction",
+    "racking",
+    "material handling equipment",
+    "forklift",
+    "vehicle purchase",
+    "fleet leasing",
+    "fuel supply",
+    "school bus",
+    "student transportation",
+    "paratransit operations",
+    "waste collection",
+    "snow removal",
+    "moving and relocation services",
+    "driver staffing agency"
+  ],
+  "thresholds": {
+    "note": "US federal postings above the micro-purchase and simplified acquisition floors reach SAM.gov. Canadian figures are the same trade-agreement thresholds as every other industry. Verify the current US figures with the tenant's capture lead before relying on them; they are indexed and move.",
+    "values": [
+      {
+        "regime": "NWPTA",
+        "currency": "CAD",
+        "amount": 75000,
+        "appliesTo": "BC, AB, SK, MB goods and services"
+      }
+    ]
+  },
+  "scoring": {
+    "weights": {
+      "productFit": 35,
+      "buyerFit": 15,
+      "dealSize": 15,
+      "timeline": 10,
+      "incumbent": 15,
+      "geography": 10
+    },
+    "weightsNote": "incumbent is weighted higher than the education and nonprofit packs. Last-mile contracts are re-competed on a cycle and the incumbent carrier or platform is usually named in the solicitation, which is a stronger signal here than in K-12.",
+    "minScoreToPursue": 55,
+    "autoNoBidBelow": 30
+  },
+  "openQuestions": [
+    "Which US states does the merged entity actually sell into? The pack enables us.state.portals but names none.",
+    "Is there an existing customer list to seed data/lastmile-shipper-watch.json? A tenant's installed-base watch list is usually its highest-yield channel."
+  ],
+  "sources": [
+    "https://sam.gov/contracting",
+    "https://jorpex.com/sources/canada-provincial-portals/"
+  ]
+}

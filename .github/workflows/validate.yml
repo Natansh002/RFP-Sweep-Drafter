@@ -1,0 +1,33 @@
+name: Validate config
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Validate config
+        run: node scripts/validate.mjs
+
+      - name: Scorer regression tests
+        run: node scripts/test-score.mjs
+
+      # The workflows in n8n/ are generated. If a config or the scorer changed
+      # without a rebuild, the committed workflow is stale and the sweep would
+      # score differently from the desk. Fail on that rather than let it ship.
+      - name: Check n8n/ is up to date
+        run: |
+          node scripts/build-workflows.mjs
+          if ! git diff --quiet -- n8n/; then
+            echo "::error::n8n/ is out of date. Run 'npm run build' and commit the result."
+            git --no-pager diff --stat -- n8n/
+            exit 1
+          fi

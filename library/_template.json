@@ -1,0 +1,16 @@
+{
+  "$comment": "Copy to library/<tenant-id>.json. Approved answers only; the drafter cites them by id and marks any entry past its review date as STALE. No links to internal tools (the validator checks).",
+  "tenant": "CHANGEME",
+  "entries": [
+    {
+      "id": "sec-001",
+      "question": "Describe your data security and hosting model.",
+      "answer": "",
+      "tags": ["security", "hosting", "SOC 2", "data residency"],
+      "industries": [],
+      "owner": "",
+      "lastReviewed": "",
+      "reviewEveryDays": 180
+    }
+  ]
+}

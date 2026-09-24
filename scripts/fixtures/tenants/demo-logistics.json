@@ -1,0 +1,108 @@
+{
+  "id": "demo-logistics",
+  "name": "Demo Logistics Software",
+  "legalEntities": [],
+  "status": "active",
+  "lastReviewed": "2026-09-24",
+  "industries": [
+    "logistics-lastmile-tms"
+  ],
+  "geography": [
+    "US",
+    "CA"
+  ],
+  "excludeChannels": [],
+  "schedule": {
+    "cron": "0 10 * * 1",
+    "timezone": "America/Toronto"
+  },
+  "profile": {
+    "companyName": "Demo Logistics Software",
+    "oneLiner": "provides software for the organisations in this test.",
+    "summary": "",
+    "capabilities": [],
+    "differentiators": [],
+    "implementationApproach": "",
+    "referencesNote": "",
+    "profileNote": "The drafter builds response skeletons from these fields and nothing else. Only put approved, substantiated claims here. Empty fields become [TODO] markers in the draft rather than invented text."
+  },
+  "offerings": {
+    "logistics-lastmile-tms": {
+      "productLines": [
+        "Demo Courier TMS"
+      ],
+      "defaultAssignee": "Capture Lead",
+      "pitch": ""
+    }
+  },
+  "team": [
+    "Capture Lead",
+    "Sales Exec",
+    "Bid Writer"
+  ],
+  "owners": {
+    "default": "Capture Lead"
+  },
+  "autoAssign": false,
+  "competitors": [],
+  "goNoGo": {
+    "threshold": 65,
+    "criteria": [
+      {
+        "id": "fit",
+        "label": "Our product meets most mandatory requirements",
+        "weight": 25
+      },
+      {
+        "id": "relationship",
+        "label": "We know the buyer, or had contact before the RFP",
+        "weight": 15
+      },
+      {
+        "id": "reference",
+        "label": "We have a strong reference in this segment",
+        "weight": 15
+      },
+      {
+        "id": "timeline",
+        "label": "We can produce a quality response by the deadline",
+        "weight": 15
+      },
+      {
+        "id": "budget",
+        "label": "Budget or value is worth the pursuit cost",
+        "weight": 10
+      },
+      {
+        "id": "incumbent",
+        "label": "No incumbent lock-in, or the incumbent is vulnerable",
+        "weight": 10
+      },
+      {
+        "id": "capacity",
+        "label": "We have delivery capacity if we win",
+        "weight": 10
+      }
+    ]
+  },
+  "detailPagesPerRun": 40,
+  "guard": {
+    "extraBlockedHosts": []
+  },
+  "tracking": {
+    "mode": "dashboard",
+    "excel": true
+  },
+  "crm": {
+    "type": "",
+    "rule": "",
+    "sweeperWrites": false
+  },
+  "notify": {
+    "email": []
+  },
+  "installedBaseWatch": null,
+  "safety": {
+    "maxNewPursuePerRun": 5
+  }
+}

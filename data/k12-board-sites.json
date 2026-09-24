@@ -1,0 +1,14 @@
+{
+  "$comment": "Direct-sweep watch list. One entry per organisation whose RFPs never reach a procurement portal. This is usually the highest-yield channel in a pack and the one a portal-only sweep misses entirely.",
+  "id": "k12-board-sites",
+  "lastReviewed": "",
+  "entries": [],
+  "entryShape": {
+    "name": "Organisation name as they write it",
+    "domain": "example.org",
+    "procurementUrl": "https://example.org/procurement",
+    "cadence": "weekly | monthly",
+    "source": "where this entry came from",
+    "verified": "YYYY-MM-DD"
+  }
+}

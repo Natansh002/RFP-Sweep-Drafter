@@ -1,0 +1,144 @@
+{
+  "id": "nonprofit",
+  "name": "Nonprofit and social services organisations",
+  "status": "proven",
+  "statusNote": "Channels carried over from a nonprofit sweep that has run Mon/Wed/Fri against live bids. Company-neutral: product lines, owners and watch lists live in each tenant's offerings.",
+  "lastReviewed": "2026-09-24",
+  "geography": [
+    "CA",
+    "US"
+  ],
+  "buyerTypes": [
+    "registered charity",
+    "foundation",
+    "social services agency",
+    "human services agency",
+    "community health centre",
+    "public health unit",
+    "YMCA and similar membership organisation",
+    "housing authority",
+    "assisted living and residential care",
+    "arts and culture organisation",
+    "association"
+  ],
+  "channels": [
+    {
+      "ref": "ca.mash.bidsandtenders",
+      "priority": 1
+    },
+    {
+      "ref": "ca.federal.canadabuys",
+      "priority": 2,
+      "note": "Federally funded agencies post here."
+    },
+    {
+      "ref": "ca.bc.bcbid",
+      "priority": 2
+    },
+    {
+      "ref": "ca.ab.apc",
+      "priority": 2
+    },
+    {
+      "ref": "ca.on.ontariotenders",
+      "priority": 2
+    },
+    {
+      "ref": "ca.agg.biddingo",
+      "priority": 3
+    },
+    {
+      "ref": "us.agg.bidnetdirect",
+      "priority": 3
+    },
+    {
+      "ref": "us.federal.sam",
+      "priority": 3,
+      "note": "US nonprofits holding federal grants sometimes post here."
+    }
+  ],
+  "directSites": {
+    "note": "Most nonprofit RFPs never reach a procurement portal. They are posted on the organisation's own site, often on a page called Procurement, Opportunities or Work With Us. This is the channel that matters most for this industry and the one a portal-only sweep misses entirely.",
+    "cadence": "weekly",
+    "seedFrom": "data/nonprofit-watch.json"
+  },
+  "qualifiers": {
+    "titleKeywords": [
+      "enterprise resource planning",
+      "ERP",
+      "financial management",
+      "financial system",
+      "accounting system",
+      "fund accounting",
+      "grant management",
+      "human resources information system",
+      "HRIS",
+      "payroll",
+      "workforce management",
+      "scheduling software",
+      "time and attendance",
+      "case management and finance",
+      "back office system"
+    ],
+    "bodyKeywords": [
+      "fund accounting",
+      "restricted funds",
+      "grant reporting",
+      "chart of accounts",
+      "dimensions",
+      "donor",
+      "CRA",
+      "T3010",
+      "employee self service",
+      "union",
+      "collective agreement",
+      "expense claim",
+      "requisition"
+    ],
+    "must": [
+      "buyer is a nonprofit, charity, or public-benefit body",
+      "solicitation is for software or an implementation of software"
+    ]
+  },
+  "disqualifiers": [
+    "construction",
+    "renovation",
+    "roofing",
+    "HVAC",
+    "janitorial",
+    "landscaping",
+    "security guard services",
+    "catering",
+    "food services",
+    "fundraising agency",
+    "donor CRM only",
+    "marketing agency",
+    "legal services",
+    "audit services",
+    "actuarial",
+    "staffing agency",
+    "temporary labour",
+    "medical supplies",
+    "PPE",
+    "vehicles"
+  ],
+  "thresholds": {
+    "note": "Nonprofits are mostly not bound by public procurement thresholds. They post when their own policy or a funder requires it, which is why there is no reliable floor and why directSites carries this industry.",
+    "values": []
+  },
+  "scoring": {
+    "weights": {
+      "productFit": 35,
+      "buyerFit": 20,
+      "dealSize": 15,
+      "timeline": 10,
+      "incumbent": 10,
+      "geography": 10
+    },
+    "minScoreToPursue": 55,
+    "autoNoBidBelow": 30
+  },
+  "sources": [
+    "https://bidfit.ca/guides/how-to-find-canadian-government-tenders"
+  ]
+}

@@ -1,0 +1,14 @@
+node_modules/
+.env
+.env.local
+.env.*.local
+.DS_Store
+*.log
+# Findings are business data: keep them out of git unless the team decides otherwise.
+store/*.json
+output/
+# No customer data in this repo. Keep any customer or prospect lists outside it.
+data/private/
+*customer*.json
+# Built by scripts/build-site.mjs; published by .github/workflows/pages.yml
+site/

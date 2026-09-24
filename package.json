@@ -1,0 +1,28 @@
+{
+  "name": "ionic-rfp-sweeper",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Config-driven RFP sweeper and drafter for any Ionic operating company. Findings go to an Excel workbook and a local dashboard with assignees and action items. No Jira, no Confluence, no links to internal tools.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "sweep": "node scripts/sweep.mjs",
+    "dashboard": "node scripts/dashboard.mjs",
+    "import": "node scripts/import.mjs",
+    "export": "node scripts/export.mjs",
+    "new-tenant": "node scripts/new-tenant.mjs",
+    "validate": "node scripts/validate.mjs",
+    "validate:strict": "node scripts/validate.mjs --strict",
+    "build": "node scripts/build-workflows.mjs",
+    "test": "RFP_TENANTS_DIR=scripts/fixtures/tenants node scripts/test-score.mjs && RFP_TENANTS_DIR=scripts/fixtures/tenants node scripts/test-app.mjs",
+    "check": "npm run build && npm run validate && npm test",
+    "deploy:n8n": "node scripts/deploy-n8n.mjs",
+    "site": "node scripts/build-site.mjs"
+  },
+  "dependencies": {
+    "exceljs": "^4.4.0"
+  },
+  "license": "UNLICENSED"
+}

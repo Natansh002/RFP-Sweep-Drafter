@@ -1,0 +1,232 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ionicpartners.app/schema/industry-pack.schema.json",
+  "title": "Industry pack",
+  "description": "What an industry's RFPs look like and where they are published. Company-neutral: shared by every Ionic company that sells into the industry. Product lines, owners and watch lists live in each tenant's offerings.",
+  "type": "object",
+  "required": [
+    "id",
+    "name",
+    "status",
+    "geography",
+    "channels",
+    "qualifiers",
+    "scoring"
+  ],
+  "additionalProperties": true,
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "description": "Must match the filename."
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "enum": [
+        "draft",
+        "unvalidated",
+        "proven",
+        "retired"
+      ],
+      "description": "draft: not swept by a scheduled run. unvalidated: channels are real, keywords are not calibrated. proven: run against live bids. retired: no tenant may subscribe."
+    },
+    "statusNote": {
+      "type": "string"
+    },
+    "lastReviewed": {
+      "type": "string",
+      "format": "date"
+    },
+    "geography": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Z]{2}$"
+      }
+    },
+    "buyerTypes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "channels": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "ref",
+          "priority"
+        ],
+        "properties": {
+          "ref": {
+            "type": "string",
+            "description": "An id from channels/registry.json."
+          },
+          "priority": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 3,
+            "description": "1 highest-yield, 3 widest. The run picks a ceiling."
+          },
+          "note": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "directSites": {
+      "type": "object",
+      "description": "Buyers whose RFPs never reach a portal. For most industries this is where the real yield is.",
+      "properties": {
+        "note": {
+          "type": "string"
+        },
+        "cadence": {
+          "enum": [
+            "daily",
+            "weekly",
+            "monthly"
+          ]
+        },
+        "seedFrom": {
+          "type": "string"
+        }
+      }
+    },
+    "qualifiers": {
+      "type": "object",
+      "required": [
+        "titleKeywords"
+      ],
+      "properties": {
+        "titleKeywords": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          },
+          "description": "Worth far more than a body match. Portals pad the body."
+        },
+        "bodyKeywords": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "must": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Prose conditions for a human reviewer. Not machine-evaluated."
+        }
+      }
+    },
+    "disqualifiers": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Hard gate, applied before scoring. A term here must not also appear as a qualifier."
+    },
+    "thresholds": {
+      "type": "object",
+      "properties": {
+        "note": {
+          "type": "string"
+        },
+        "values": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "regime",
+              "currency",
+              "amount"
+            ],
+            "properties": {
+              "regime": {
+                "type": "string"
+              },
+              "currency": {
+                "type": "string"
+              },
+              "amount": {
+                "type": "number"
+              },
+              "appliesTo": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "scoring": {
+      "type": "object",
+      "required": [
+        "weights",
+        "minScoreToPursue",
+        "autoNoBidBelow"
+      ],
+      "properties": {
+        "weights": {
+          "type": "object",
+          "description": "Must total exactly 100, or the score is not out of 100 and every threshold lies. Keys must be dimensions scripts/score.mjs implements.",
+          "additionalProperties": {
+            "type": "number",
+            "minimum": 0
+          },
+          "properties": {
+            "productFit": {
+              "type": "number"
+            },
+            "buyerFit": {
+              "type": "number"
+            },
+            "dealSize": {
+              "type": "number"
+            },
+            "timeline": {
+              "type": "number"
+            },
+            "incumbent": {
+              "type": "number"
+            },
+            "geography": {
+              "type": "number"
+            }
+          }
+        },
+        "weightsNote": {
+          "type": "string"
+        },
+        "autoNoBidBelow": {
+          "type": "number",
+          "description": "Below this it is not listed. Must be below minScoreToPursue."
+        },
+        "minScoreToPursue": {
+          "type": "number",
+          "description": "At or above this a finding is marked pursue and gets a response draft and a full action plan."
+        }
+      }
+    },
+    "openQuestions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

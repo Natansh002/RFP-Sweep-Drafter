@@ -1,0 +1,114 @@
+{
+  "$comment": "Copy with: npm run new-tenant -- <id> \"<Company name>\" --industries k12,nonprofit. One file per Ionic operating company. Read docs/adding-a-tenant.md.",
+  "id": "CHANGEME",
+  "name": "",
+  "legalEntities": [],
+  "status": "provisional",
+  "lastReviewed": "",
+  "industries": [],
+  "geography": [],
+  "excludeChannels": [],
+  "schedule": {
+    "cron": "0 10 * * 1",
+    "timezone": "America/Toronto"
+  },
+  "profile": {
+    "companyName": "",
+    "oneLiner": "",
+    "summary": "",
+    "capabilities": [],
+    "differentiators": [],
+    "implementationApproach": "",
+    "referencesNote": "",
+    "profileNote": "The drafter builds response skeletons from these fields and nothing else. Only put approved, substantiated claims here. Empty fields become [TODO] markers in the draft rather than invented text."
+  },
+  "offerings": {
+    "<industry-id>": {
+      "productLines": [],
+      "defaultAssignee": "RFP Manager",
+      "pitch": "",
+      "extraTitleKeywords": [],
+      "extraBodyKeywords": [],
+      "extraDisqualifiers": [],
+      "excludeChannels": []
+    }
+  },
+  "team": [
+    "RFP Manager",
+    "Sales Exec",
+    "Bid Writer"
+  ],
+  "owners": {
+    "default": "RFP Manager"
+  },
+  "autoAssign": false,
+  "competitors": [
+    {
+      "name": "",
+      "aliases": []
+    }
+  ],
+  "competitorsNote": "Named in a posting page → tagged on the finding and a Competitive notes section in the draft. Public names only.",
+  "goNoGo": {
+    "threshold": 65,
+    "criteria": [
+      {
+        "id": "fit",
+        "label": "Our product meets most mandatory requirements",
+        "weight": 25
+      },
+      {
+        "id": "relationship",
+        "label": "We know the buyer, or had contact before the RFP",
+        "weight": 15
+      },
+      {
+        "id": "reference",
+        "label": "We have a strong reference in this segment",
+        "weight": 15
+      },
+      {
+        "id": "timeline",
+        "label": "We can produce a quality response by the deadline",
+        "weight": 15
+      },
+      {
+        "id": "budget",
+        "label": "Budget or value is worth the pursuit cost",
+        "weight": 10
+      },
+      {
+        "id": "incumbent",
+        "label": "No incumbent lock-in, or the incumbent is vulnerable",
+        "weight": 10
+      },
+      {
+        "id": "capacity",
+        "label": "We have delivery capacity if we win",
+        "weight": 10
+      }
+    ]
+  },
+  "goNoGoNote": "Optional. Omit to use the defaults. Weights must total 100. People answer each criterion yes / partial / no in the dashboard; the decision stays theirs.",
+  "detailPagesPerRun": 40,
+  "guard": {
+    "extraBlockedHosts": []
+  },
+  "tracking": {
+    "mode": "dashboard",
+    "excel": true
+  },
+  "crm": {
+    "type": "",
+    "rule": "",
+    "sweeperWrites": false
+  },
+  "notify": {
+    "email": []
+  },
+  "installedBaseWatch": null,
+  "safety": {
+    "maxNewPursuePerRun": 15
+  },
+  "teamNote": "Role titles only, never people's names. Feeds the Assignee dropdown."
+}

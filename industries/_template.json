@@ -1,0 +1,46 @@
+{
+  "$comment": "Copy this file to industries/<id>.json and fill it in. Read docs/adding-an-industry.md first. The validator will reject an id that does not match the filename.",
+  "id": "CHANGEME",
+  "name": "",
+  "status": "draft",
+  "statusNote": "draft until it has run two sweeps and someone has cut the qualifier list against real hits. Values: draft, unvalidated, proven, retired.",
+  "lastReviewed": "",
+  "geography": [],
+  "buyerTypes": [],
+  "channels": [
+    {
+      "ref": "id from channels/registry.json",
+      "priority": 1,
+      "note": ""
+    }
+  ],
+  "directSites": {
+    "note": "The buyers whose RFPs never reach a portal. For most industries this is where the real yield is, so do not leave it empty because portals are easier.",
+    "cadence": "weekly",
+    "seedFrom": "data/<id>-watch.json"
+  },
+  "qualifiers": {
+    "titleKeywords": [],
+    "bodyKeywords": [],
+    "must": []
+  },
+  "disqualifiers": [],
+  "thresholds": {
+    "note": "The value below which a buyer in this industry may award without posting. Anything under it will never be found by a portal sweep, whatever the keywords.",
+    "values": []
+  },
+  "scoring": {
+    "weights": {
+      "productFit": 35,
+      "buyerFit": 20,
+      "dealSize": 15,
+      "timeline": 10,
+      "incumbent": 10,
+      "geography": 10
+    },
+    "minScoreToPursue": 55,
+    "autoNoBidBelow": 30
+  },
+  "openQuestions": [],
+  "sources": []
+}

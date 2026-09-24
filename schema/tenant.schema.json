@@ -1,0 +1,280 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ionicpartners.app/schema/tenant.schema.json",
+  "title": "Tenant",
+  "description": "One Ionic operating company: which industries it sweeps, what it sells into each, who can be assigned findings, and what the drafter may say about it. There is no ticket system: findings are tracked in the dashboard and Excel only.",
+  "type": "object",
+  "required": [
+    "id",
+    "name",
+    "status",
+    "industries",
+    "geography",
+    "offerings",
+    "safety"
+  ],
+  "additionalProperties": true,
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "description": "Must match the filename."
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "legalEntities": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "status": {
+      "enum": [
+        "provisional",
+        "active",
+        "paused",
+        "retired"
+      ]
+    },
+    "statusNote": {
+      "type": "string"
+    },
+    "lastReviewed": {
+      "type": "string",
+      "format": "date"
+    },
+    "industries": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string"
+      },
+      "description": "Ids from industries/."
+    },
+    "geography": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Z]{2}$"
+      }
+    },
+    "schedule": {
+      "type": "object",
+      "properties": {
+        "cron": {
+          "type": "string"
+        },
+        "timezone": {
+          "type": "string"
+        },
+        "note": {
+          "type": "string"
+        }
+      }
+    },
+    "crm": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string"
+        },
+        "syncsTo": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "rule": {
+          "type": "string"
+        },
+        "sweeperWrites": {
+          "const": false,
+          "description": "Always false. The CRM record follows a go/no-go, which is a person's decision."
+        }
+      }
+    },
+    "owners": {
+      "type": "object"
+    },
+    "notify": {
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "array",
+          "maxItems": 0,
+          "description": "Unused. The sweeper sends nothing."
+        }
+      }
+    },
+    "installedBaseWatch": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "safety": {
+      "type": "object",
+      "required": [
+        "maxNewPursuePerRun"
+      ],
+      "properties": {
+        "maxNewPursuePerRun": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "A run with more pursue findings than this adds nothing and reports. A qualifier that matches everything must fail loudly."
+        }
+      }
+    },
+    "openQuestions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "excludeChannels": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Channel ids from channels/registry.json this company never sweeps."
+    },
+    "profile": {
+      "type": "object",
+      "description": "What the drafter may say. Only approved, substantiated claims. Empty fields become [TODO].",
+      "properties": {
+        "companyName": {
+          "type": "string"
+        },
+        "oneLiner": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "differentiators": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "implementationApproach": {
+          "type": "string"
+        },
+        "referencesNote": {
+          "type": "string"
+        }
+      }
+    },
+    "offerings": {
+      "type": "object",
+      "description": "Keyed by industry id. What this company sells into that industry, and its own keyword additions.",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "productLines"
+        ],
+        "properties": {
+          "productLines": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            }
+          },
+          "defaultAssignee": {
+            "type": "string"
+          },
+          "pitch": {
+            "type": "string"
+          },
+          "extraTitleKeywords": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "extraBodyKeywords": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "extraDisqualifiers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "excludeChannels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "team": {
+      "type": "array",
+      "description": "Role titles for the Assignee dropdown (e.g. \"RFP Manager\", \"Bid Writer\"). Never people's names or emails.",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "autoAssign": {
+      "type": "boolean",
+      "description": "If true, new findings are assigned to the suggested owner. Default false: a person assigns."
+    },
+    "tracking": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "const": "dashboard"
+        },
+        "excel": {
+          "type": "boolean"
+        }
+      }
+    },
+    "guard": {
+      "type": "object",
+      "properties": {
+        "extraBlockedHosts": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "More hosts the sweeper must never fetch or link, e.g. the company's own intranet domain."
+        }
+      }
+    }
+  },
+  "not": {
+    "anyOf": [
+      {
+        "required": [
+          "ticketSystem"
+        ]
+      },
+      {
+        "required": [
+          "jira"
+        ]
+      },
+      {
+        "required": [
+          "confluence"
+        ]
+      }
+    ]
+  }
+}
