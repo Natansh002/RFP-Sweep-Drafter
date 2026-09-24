@@ -57,11 +57,13 @@ const meta = {
 };
 fs.writeFileSync(path.join(OUT, "data", "meta.json"), JSON.stringify(meta, null, 2));
 
+// Cache-busting: a new build's files load at once instead of a stale cached copy.
+const V = Date.now().toString(36);
 const html = fs.readFileSync(path.join(ROOT, "dashboard", "index.html"), "utf8")
   .replace("<head>", `<head>\n  <meta http-equiv="Content-Security-Policy" content="${CSP}">\n  <meta name="rfp-mode" content="static">`)
-  .replace(/href="\/style\.css"/, 'href="style.css"')
-  .replace(/src="\/app\.js"/, 'src="app.js"')
-  .replace(/src="\/rfp-bundle\.js"/, 'src="rfp-bundle.js"');
+  .replace(/href="\/style\.css"/, `href="style.css?v=${V}"`)
+  .replace(/src="\/app\.js"/, `src="app.js?v=${V}"`)
+  .replace(/src="\/rfp-bundle\.js"/, `src="rfp-bundle.js?v=${V}"`);
 fs.writeFileSync(path.join(OUT, "index.html"), html);
 for (const f of ["app.js", "style.css"]) fs.copyFileSync(path.join(ROOT, "dashboard", f), path.join(OUT, f));
 fs.writeFileSync(path.join(OUT, "rfp-bundle.js"), browserBundle());

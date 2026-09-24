@@ -629,8 +629,26 @@ function openWorkspace(f, target) {
   if (!state.ws.analysis && state.ws.text) runAnalyze(state.ws, { silent: true });
   renderSweepResults();
   renderWorkspace(state.ws);
-  $(target).scrollIntoView({ behavior: "smooth", block: "start" });
+  showOverlay(target);
 }
+
+// The opportunity workspace opens as a panel over the page, so it is visible
+// wherever the person clicked Open in a long list.
+function showOverlay(target) {
+  const box = $(target);
+  box.classList.add("ws-overlay");
+  document.body.classList.add("ws-open");
+  box.scrollTop = 0;
+  box.querySelector(".workspace")?.focus?.();
+}
+function hideOverlay(target) {
+  const box = $(target);
+  box.classList.remove("ws-overlay");
+  box.replaceChildren();
+  document.body.classList.remove("ws-open");
+}
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && document.body.classList.contains("ws-open")) { hideOverlay("#sWorkspace"); state.ws = null; renderSweepResults(); } });
+document.addEventListener("click", (e) => { if (e.target?.id === "sWorkspace" && e.target.classList.contains("ws-overlay")) { hideOverlay("#sWorkspace"); state.ws = null; renderSweepResults(); } });
 
 function wsMeta(ws) {
   const f = ws.finding ?? {};
@@ -702,7 +720,7 @@ function renderWorkspace(ws) {
     draft: () => { runDraft(ws); renderWorkspace(ws); },
     redteam: () => { runRedTeam(ws); renderWorkspace(ws); },
   };
-  box.replaceChildren(h("section", { class: "card workspace" },
+  box.replaceChildren(h("section", { class: "card workspace", tabindex: "-1", role: "dialog", "aria-label": ws.title || "Opportunity workspace" },
     h("div", { class: "ws-head" },
       h("div", {},
         h("h2", {}, ws.title || "Untitled RFP"),
@@ -710,7 +728,7 @@ function renderWorkspace(ws) {
       h("div", { class: "ws-actions" },
         h("button", { class: "keep", onclick: () => exportScoring(ws), disabled: !a }, "Export scoring file (.xlsx)"),
         h("button", { class: "keep", onclick: () => downloadText(`${slug(ws.title)}-proposal-draft.md`, ws.proposal ?? ""), disabled: !ws.proposal }, "Download proposal (.md)"),
-        h("button", { class: "keep link", onclick: () => { box.replaceChildren(); if (ws === state.ws) { state.ws = null; renderSweepResults(); } } }, "Close"))),
+        h("button", { class: "keep", onclick: () => { if (box.classList.contains("ws-overlay")) hideOverlay(ws.target); else box.replaceChildren(); if (ws === state.ws) { state.ws = null; renderSweepResults(); } } }, "Close ✕"))),
     h("ol", { class: "stepper" }, ...STEPS.map(([k, label], i) => h("li", { class: done[k] ? "done" : "" }, h("button", { class: "keep", onclick: act[k] }, h("span", { class: "n" }, done[k] ? "✓" : i + 1), label)))),
     ws.finding && !ws.documentName && (!ws.text || ws.text.split(/\s+/).length < 400) ? uploadPrompt(ws) : null,
     sc ? h("div", { class: "kpis ws-kpis" }, ...[["Overall", sc.overall, sc.band], ["Fit", sc.fit], ["Risk (higher is safer)", sc.risk], ["Timeline", sc.timeline], ...(sc.coverage != null ? [["Coverage", sc.coverage]] : []), ["Requirements", a.requirements.length, `${sc.mandatory} mandatory`]].map(([l, v, sub]) => h("div", { class: "kpi" }, h("div", { class: "v" }, v), h("div", { class: "l" }, l, sub ? ` · ${sub}` : "")))) : null,
