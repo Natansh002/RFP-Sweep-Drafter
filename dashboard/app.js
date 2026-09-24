@@ -163,7 +163,6 @@ function setupStatic() {
     "To assign or update: Download Excel → edit the yellow ✎ columns → save it as ", state.meta.tenants.map((t, i) => [i ? " / " : "", h("code", {}, `${t.id}.xlsx`)]),
     " and upload it to the repo's assignments/ folder", upload ? [" (", h("a", { href: upload, target: "_blank", rel: "noopener noreferrer" }, "upload"), ")"] : "",
     ". The site rebuilds with your changes."));
-  $(".brand .sub").textContent = "Published by GitHub Actions. Nothing is filed in Jira or Confluence.";
 }
 
 function lockEdits() {
