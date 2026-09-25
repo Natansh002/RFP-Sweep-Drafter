@@ -123,10 +123,11 @@
         <select id="fAssignee"><option value="">Anyone</option><option value="__none">Unassigned</option></select>
         <label class="check"><input type="checkbox" id="fChanged"> Changed since last sweep</label>
       </div>
+      <div class="bulk" id="bulkFindings" hidden></div>
       <div class="tablewrap">
         <table class="grid" id="findings">
           <thead><tr>
-            <th class="num">Score</th><th>Opportunity</th><th>Industry</th><th>Closes</th><th>Status</th><th>Assignee</th><th class="num">Actions</th><th></th>
+            <th class="sel"><input type="checkbox" id="selAllFindings" aria-label="Select all shown"></th><th class="num">Score</th><th>Opportunity</th><th>Industry</th><th>Closes</th><th>Status</th><th>Assignee</th><th class="num">Actions</th><th></th>
           </tr></thead>
           <tbody></tbody>
         </table>
@@ -139,9 +140,10 @@
         <select id="aAssignee"><option value="">Anyone</option><option value="__me">Mine</option><option value="__none">Unassigned</option></select>
         <label class="check"><input type="checkbox" id="aShowDone"> Show done</label>
       </div>
+      <div class="bulk" id="bulkActions" hidden></div>
       <div class="tablewrap">
         <table class="grid" id="actions">
-          <thead><tr><th>Done</th><th>Action</th><th>Opportunity</th><th>Assignee</th><th>Due</th></tr></thead>
+          <thead><tr><th class="sel"><input type="checkbox" id="selAllActions" aria-label="Select all shown"></th><th>Done</th><th>Action</th><th>Opportunity</th><th>Assignee</th><th>Due</th></tr></thead>
           <tbody></tbody>
         </table>
       </div>

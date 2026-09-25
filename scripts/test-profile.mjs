@@ -136,5 +136,43 @@ a("guard: a public site is read", typeof ok.html === "string" && ok.html.include
 const bundle = browserBundle();
 a("bundle: profile functions exported to the page", /buildProfile/.test(bundle) && /companyFit/.test(bundle) && /profileSearch/.test(bundle) && /pageFacts/.test(bundle));
 
+// ---- the published page reads websites through a reader service's Markdown
+{
+  const { markdownFacts, profileSummary } = await import("../lib/profile.mjs");
+  const MD = `Title: Fund accounting and payroll software | Harborline Systems
+
+URL Source: https://www.harborline.example/
+
+Markdown Content:
+## Fund accounting for nonprofits and school boards
+
+Harborline Systems builds fund accounting, payroll and grant management software for nonprofits and school districts, on Microsoft Dynamics 365 Business Central.
+
+Payroll and HR
+--------------
+
+Payroll software with position control and collective agreements for school boards, on Business Central with Power BI reporting.
+
+[Image 1](https://www.harborline.example/wp-content/hero.webp)
+
+Links/Buttons:
+[Payroll and HR](https://www.harborline.example/solutions/payroll-hr/)
+[About us](https://www.harborline.example/about/)
+[Contact](https://www.harborline.example/contact/)
+[Sitemap](https://www.harborline.example/sitemap/)
+[Partner](https://other.example/)`;
+  const f = markdownFacts(MD, "https://www.harborline.example/");
+  a("markdown: title, headings (both styles) and text", f.title.startsWith("Fund accounting") && f.headings.includes("Fund accounting for nonprofits and school boards") && f.headings.includes("Payroll and HR") && /position control/.test(f.text));
+  a("markdown: page links from the Links/Buttons list, images left out", f.links.some((l) => l.href === "https://www.harborline.example/solutions/payroll-hr/") && !f.links.some((l) => /\.webp/.test(l.href)));
+  a("markdown: the link list is not read as page text", !/Links\/Buttons/.test(f.text));
+  const next = profileLinks("https://www.harborline.example/", f, 5);
+  a("pages to read: products and about, never contact, sitemap or other sites", next.includes("https://www.harborline.example/solutions/payroll-hr") && next.includes("https://www.harborline.example/about") && !next.some((u) => /contact|sitemap|other\.example/.test(u)));
+  const P2 = buildProfile({ website: "https://www.harborline.example/", pages: [f] });
+  a("name: the brand from a 'Tagline | Brand' title", P2.name === "Harborline Systems");
+  const sum = profileSummary(P2);
+  a("summary: what it sells, to whom, on what, in plain words", /^Harborline Systems sells ERP \/ Finance/.test(sum) && /to .*nonprofit/.test(sum) && /K-12/.test(sum) && /In its own words: "Harborline Systems builds fund accounting/.test(sum) && /Read from 1 page of harborline\.example/.test(sum));
+  a("terms: generic single words left out (they would match every RFP)", !P2.keywords.some((k) => ["management", "system", "time", "software", "data"].includes(k)));
+}
+
 console.log(fails ? `\n${fails} FAILED, ${passes} passed` : `\nall ${passes} profile assertions passed`);
 process.exit(fails ? 1 : 0);

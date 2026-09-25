@@ -144,12 +144,18 @@ const routes = [
       const home = await readPublicPage(url).catch((e) => ({ error: e.message }));
       if (home.error) throw Object.assign(new Error(`Could not read ${url}: ${home.error}`), { status: /^Blocked:/.test(home.error) ? 400 : 422 });
       const pages = [pageFacts(home.html, url)];
+      const read = [{ url, html: home.html }];
       const more = profileLinks(url, pages[0], 6);
       for (const u of more) {
         const r = await readPublicPage(u).catch((e) => ({ error: e.message }));
-        if (!r.error && r.html) pages.push(pageFacts(r.html, u));
+        if (!r.error && r.html) { pages.push(pageFacts(r.html, u)); read.push({ url: u, html: r.html }); }
       }
       profile = buildProfile({ website: url, pages });
+      // The pages read are product knowledge: add them to the reference library, so drafts can cite them.
+      const refs = readPrivate("references.local.json")?.references ?? [];
+      const byId = new Map(refs.map((r) => [r.id, r]));
+      for (const p of read) { const r = makeReference({ source: p.url, title: `${profile.name}: ${pageFacts(p.html, p.url).title || p.url}`, kind: "link", text: pageText(p.html) }); if (!r.error) byId.set(r.id, r); }
+      writePrivate("references.local.json", { references: [...byId.values()] });
     } else if (b.text && String(b.text).trim().length > 80) {
       profile = buildProfile({ website: b.website || null, pages: [textFacts(b.text, b.name || "")], source: "pasted text" });
     } else throw Object.assign(new Error("Give a website address, or paste at least a paragraph about the company."), { status: 400 });

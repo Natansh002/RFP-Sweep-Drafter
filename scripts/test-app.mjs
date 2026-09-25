@@ -202,5 +202,30 @@ a("sweep+detail: close date from the posting page", sis?.closeDate === "2026-11-
 a("sweep+detail: requirements and key dates carried", sis?.requirements.length >= 3 && sis?.keyDates.questions === "2026-11-06");
 a("sweep+detail: fewer unknowns than the listing alone", !sis.reasons.some((r) => /^timeline .*unknown/.test(r)));
 
+// ------------------------------------------------------------------ change detection: real changes only, one action each
+{
+  const { contentHash } = await import("../lib/enrich.mjs");
+  const { tidyChangeActions } = await import("../lib/ledger.mjs");
+  const page = "Header\nRFP 2026-14 ERP and Payroll\n1363 d 08 h 11 m\nThe proposal shall not exceed 40 pages.";
+  const anchor = { anchor: "RFP 2026-14 ERP and Payroll" };
+  a("hash: a portal countdown and page chrome do not count as a change", contentHash(page, anchor) === contentHash(page.replace("1363 d 08 h 11 m", "1362 d 01 h 02 m").replace("Header", "Header, 3 new notices"), anchor));
+  a("hash: a real change (page limit) does", contentHash(page, anchor) !== contentHash(page.replace("40 pages", "30 pages"), anchor));
+  const base = { id: "x-1", title: "ERP", actions: [], contentHash: "v2:aaa", status: "New", rev: 0, keyDates: {}, draft: { brief: "", response: null } };
+  const L = { tenant: "demo-edu", findings: [structuredClone(base)], runs: [], gaps: [] };
+  mergeRun(L, { industry: "k12", findings: [{ ...base, contentHash: "v2:bbb" }], gaps: [] });
+  mergeRun(L, { industry: "k12", findings: [{ ...base, contentHash: "v2:ccc" }], gaps: [] });
+  const open = L.findings[0].actions.filter((x) => x.source === "change-detection" && !x.done);
+  a("change: two real changes give one open review action, updated, not two", open.length === 1 && L.findings[0].changeLog.length === 2);
+  mergeRun(L, { industry: "k12", findings: [{ ...base, contentHash: "v2:bbb" }], gaps: [] });
+  a("change: a page flipping back to a recent version is not a change", L.findings[0].changeLog.length === 2);
+  const L2 = { tenant: "demo-edu", findings: [{ ...structuredClone(base), contentHash: "0f0f0f0f" }], runs: [], gaps: [] };
+  mergeRun(L2, { industry: "k12", findings: [{ ...base, contentHash: "v2:new" }], gaps: [] });
+  a("change: a new hashing method never flags every posting", !(L2.findings[0].changeLog ?? []).length && L2.findings[0].contentHash === "v2:new");
+  const dup = { actions: [1, 2, 3].map((i) => ({ id: `addendum-${i}`, title: "Review the change", source: "change-detection", done: false, rev: 0 })).concat([{ id: "addendum-9", title: "Review (edited by a person)", source: "change-detection", done: false, rev: 2 }, { id: "a1", title: "Go/no-go", source: "drafter", done: false, rev: 0 }]) };
+  a("change: duplicates from earlier runs are tidied, keeping the one a person touched", tidyChangeActions(dup) === 3 && dup.actions.map((x) => x.id).join() === "addendum-9,a1");
+  const dup2 = { actions: [1, 2, 3].map((i) => ({ id: `addendum-${i}`, title: "Review the change", source: "change-detection", done: false, rev: 0 })) };
+  a("change: with none touched, the newest is kept", tidyChangeActions(dup2) === 2 && dup2.actions.map((x) => x.id).join() === "addendum-3");
+}
+
 console.log(fails ? `\n${fails} FAILED, ${passes} passed` : `\nall ${passes} app assertions passed`);
 process.exit(fails ? 1 : 0);

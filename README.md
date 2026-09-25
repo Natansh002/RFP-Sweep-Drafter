@@ -34,11 +34,20 @@ Status: **Active**, **Past due** (closing date passed while still open on our si
 **Closed**, All, plus **Show only RFPs relevant to us** once your company profile is set.
 The workflow steps across the top filter the results when clicked.
 
-**Your company profile:** the local dashboard reads your website itself (through the
-same guard as every sweep). The published page cannot read other websites (its security
-policy only lets it talk to its own site), so there you paste your About / Products text
-or upload a brochure; the profile stays in your browser. Every capability and match names
-the words that produced it.
+**Your company profile:** enter your website and press **Understand my business**. It reads
+the home page and up to six product and about pages, shows **What we understood** in plain
+words (what you sell, to whom, on what platform, in your own words), and keeps those pages as
+product knowledge that drafts can cite. The local dashboard reads the site itself, through the
+same guard as every sweep. The published page reads it through **r.jina.ai**, a public reader
+service: only the website's address is sent, the pages come back as text, internal and private
+addresses are never sent, and its security policy allows no other outside connection. If a site
+cannot be read, paste its text or upload a brochure. Every capability and match names the words
+that produced it; the profile stays on your machine or in your browser.
+
+**Working on the published page:** status (including Archived and Lost), owner, notes and action
+items all work there, one at a time or by selecting several (Mark done, Archive, Closed lost). The
+changes are kept in your browser; **Download my changes** turns them into an assignments sheet to
+upload to `assignments/`, and the site rebuilds with them for everyone.
 
 **Fetched with the RFP:** documents behind a sign-in (MERX, bids&tenders, Bonfire,
 Biddingo, SAP Ariba) are named, not read: the sweeper never logs in. The full document text
@@ -70,9 +79,11 @@ On the **Analyze a document** tab:
 - **Reference articles and past RFP responses.** Paste links (one per line) and add files. Past responses
   are split into question → answer pairs, articles into topics. Drafts cite them by name and always go to
   an SME to confirm: a reference is never treated as an approved answer.
-- **Export RFP responses.** Pick a pipeline and the opportunities (being worked, submitted, all open), and
-  get one filled document per opportunity plus a summary workbook, in a .zip. Saved drafts are used as they
-  are; the rest are drafted at export from your approved answers and references.
+- **Export RFP responses.** Pick a pipeline and the opportunities (being worked, submitted, all open). One
+  opportunity downloads its **Word document** directly; several come in a .zip (with a summary workbook if
+  you ask). Each workspace also has **Export response (Word)**. Answers come from your approved answers,
+  past responses, reference articles and your website's pages, and the document includes an **About your
+  company** section from your profile. Saved drafts are used as they are; the rest are drafted at export.
 
 The template and references stay private: in `library/private/` on your machine (local dashboard) or in
 your browser (published page). They are never uploaded or published. The published page cannot read other
@@ -151,7 +162,7 @@ the sheet, the import skips that row and reports a conflict, so it never overwri
 | Feature | What it does |
 |---|---|
 | **Posting-page enrichment** | Reads each candidate's own page for the closing date, question deadline, pre-bid meeting, site visit, incumbent, requirements and competitors, then re-scores. Unknowns become facts. |
-| **Addenda / change detection** | Hashes each posting page. A changed page, close date or key date raises a *changed* flag and adds a "review the addendum" action until someone acknowledges it. |
+| **Addenda / change detection** | Hashes each posting's own text, leaving out countdowns, clock times and page chrome, so only a real change counts. A changed posting, close date or key date raises a *changed* flag and one "review the addendum" action (updated, never duplicated) until someone acknowledges it. |
 | **Go/no-go scorecard** | Weighted criteria per company. People answer yes, partial or no. The score informs the decision, and a person makes it. |
 | **Answer library** | `library/<tenant>.json` holds approved answers with review dates. The drafter cites matches by id and marks overdue ones **STALE**. |
 | **Compliance matrix** | Mandatory statements, typed as insurance, format, experience, form, pricing or technical, each with an owner and status. |

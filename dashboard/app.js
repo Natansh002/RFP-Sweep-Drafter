@@ -38,8 +38,8 @@ function toast(msg, isError = false) {
   toast.t = setTimeout(() => (t.className = ""), isError ? 8000 : 3500);
 }
 
-async function staticApi(method, path) {
-  if (method !== "GET") throw new Error("This published view is read-only. Download the Excel, edit the yellow columns and upload it to assignments/ in the repo.");
+async function staticApi(method, path, body) {
+  if (method !== "GET") return staticWrite(method, path, body);
   const file = path === "/api/ledger" ? `data/${state.tenant}.json`
     : path === "/api/export.xlsx" ? `downloads/${state.tenant}-rfp-findings.xlsx`
     : path === "/api/calendar.ics" ? `downloads/${state.tenant}-rfp-deadlines.ics` : null;
@@ -50,7 +50,7 @@ async function staticApi(method, path) {
 }
 
 async function api(method, path, body, raw = false) {
-  if (STATIC) return staticApi(method, path);
+  if (STATIC) return staticApi(method, path, body);
   const sep = path.includes("?") ? "&" : "?";
   const res = await fetch(`${path}${sep}tenant=${encodeURIComponent(state.tenant)}`, {
     method,
@@ -101,13 +101,88 @@ function mutate(fn, okMsg) {
   mutationChain = mutationChain.then(async () => {
     try {
       await fn();
-      if (okMsg) toast(okMsg);
+      if (okMsg) toast(`${okMsg}${STATIC ? " · saved in this browser" : ""}`);
     } catch (e) {
       toast(e.status === 409 ? `${e.message}\nReloaded the latest version.` : e.message, true);
     }
     await loadLedger();
   });
   return mutationChain;
+}
+
+
+// ------------------------------------------------------------------ select several, then act
+state.sel = { findings: new Set(), actions: new Set() };
+
+async function bulkStatus(ids, status, label) {
+  const list = [...ids];
+  if (!list.length) return;
+  await mutate(async () => { for (const id of list) await api("PATCH", `/api/findings/${id}`, { status, rev: revOf(id) }); }, `${list.length} opportunit${list.length === 1 ? "y" : "ies"} → ${label}`);
+  state.sel.findings.clear(); state.sel.actions.clear();
+  renderBulk();
+}
+
+async function bulkDone(keys, done) {
+  const list = [...keys].map((k) => k.split("|"));
+  if (!list.length) return;
+  await mutate(async () => { for (const [fid, aid] of list) await api("PATCH", `/api/findings/${fid}/actions/${aid}`, { done, rev: actionRevOf(fid, aid) }); }, `${list.length} action item${list.length === 1 ? "" : "s"} ${done ? "marked done" : "reopened"}`);
+  state.sel.actions.clear();
+  renderBulk();
+}
+
+/** The toolbar over each table, shown while something is selected. */
+function renderBulk() {
+  const shown = (sel) => [...document.querySelectorAll(sel)];
+  const fb = $("#bulkFindings"), ab = $("#bulkActions");
+  if (fb) {
+    const n = state.sel.findings.size;
+    fb.hidden = !n;
+    fb.replaceChildren(h("strong", {}, `${n} selected`),
+      h("button", { class: "keep", onclick: () => bulkStatus(state.sel.findings, "Archived", "Archived") }, "Archive"),
+      h("button", { class: "keep", onclick: () => bulkStatus(state.sel.findings, "Lost", "Closed lost") }, "Closed lost"),
+      h("button", { class: "keep", onclick: () => bulkStatus(state.sel.findings, "No-bid", "No-bid") }, "No-bid"),
+      h("button", { class: "keep link", onclick: () => { state.sel.findings.clear(); renderFindings(); renderBulk(); } }, "Clear selection"));
+    const all = $("#selAllFindings"), boxes = shown("#findings .sel-finding");
+    if (all) { all.checked = boxes.length > 0 && boxes.every((b) => b.checked); all.indeterminate = !all.checked && boxes.some((b) => b.checked); }
+  }
+  if (ab) {
+    const n = state.sel.actions.size;
+    const fids = new Set([...state.sel.actions].map((k) => k.split("|")[0]));
+    ab.hidden = !n;
+    ab.replaceChildren(h("strong", {}, `${n} selected`),
+      h("button", { class: "keep", onclick: () => bulkDone(state.sel.actions, true) }, "Mark done"),
+      h("button", { class: "keep", onclick: () => bulkDone(state.sel.actions, false) }, "Reopen"),
+      h("button", { class: "keep", title: "Archive the opportunities these actions belong to", onclick: () => bulkStatus(fids, "Archived", "Archived") }, `Archive ${fids.size === 1 ? "its opportunity" : `their ${fids.size} opportunities`}`),
+      h("button", { class: "keep", onclick: () => bulkStatus(fids, "Lost", "Closed lost") }, "Closed lost"),
+      h("button", { class: "keep link", onclick: () => { state.sel.actions.clear(); renderActions(); renderBulk(); } }, "Clear selection"));
+    const all = $("#selAllActions"), boxes = shown("#actions .sel-action");
+    if (all) { all.checked = boxes.length > 0 && boxes.every((b) => b.checked); all.indeterminate = !all.checked && boxes.some((b) => b.checked); }
+  }
+}
+
+/** Published copy: the team sees these changes once the sheet is uploaded to assignments/. */
+async function downloadMyChanges() {
+  const edits = localEdits.all();
+  const ids = Object.keys(edits);
+  if (!ids.length) return toast("No changes kept in this browser yet.", true);
+  await loadScript("vendor/exceljs.min.js");
+  const ledger = await fetchLedgerFor(state.tenant);
+  const byId = new Map(ledger.findings.map((f) => [f.id, f]));
+  const wb = new window.ExcelJS.Workbook();
+  const fs = wb.addWorksheet("Findings");
+  fs.columns = [{ header: "ID", key: "id", width: 18 }, { header: "Title", key: "t", width: 50 }, { header: "Status", key: "s", width: 14 }, { header: "Assignee", key: "a", width: 22 }, { header: "Notes", key: "n", width: 40 }, { header: "Loss reason", key: "l", width: 24 }, { header: "Awardee", key: "w", width: 24 }];
+  const as = wb.addWorksheet("Actions");
+  as.columns = [{ header: "Finding ID", key: "fid", width: 18 }, { header: "Action ID", key: "aid", width: 22 }, { header: "Action", key: "t", width: 60 }, { header: "Assignee", key: "a", width: 22 }, { header: "Due", key: "d", width: 12 }, { header: "Done", key: "done", width: 8 }];
+  let nf = 0, na = 0;
+  for (const id of ids) {
+    const f = byId.get(id), e = edits[id];
+    if (!f) continue;
+    if (e.patch && Object.keys(e.patch).length) { fs.addRow({ id, t: f.title, s: f.status, a: f.assignee ?? "", n: f.notes ?? "", l: f.lossReason ?? "", w: f.awardee ?? "" }); nf++; }
+    const changed = new Set([...Object.keys(e.actions ?? {}), ...(e.newActions ?? []).map((a) => a.id)]);
+    for (const a of (f.actions ?? []).filter((x) => changed.has(x.id))) { as.addRow({ fid: id, aid: String(a.id).startsWith("local-") ? "" : a.id, t: a.title, a: a.assignee ?? "", d: a.due ?? "", done: a.done ? "Yes" : "No" }); na++; }
+  }
+  downloadBlob(`${state.tenant}.xlsx`, new Blob([await wb.xlsx.writeBuffer()], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+  toast(`Downloaded ${state.tenant}.xlsx: ${nf} opportunit${nf === 1 ? "y" : "ies"} and ${na} action item${na === 1 ? "" : "s"}. Upload it to the repo's assignments/ folder and the site rebuilds with your changes.`);
 }
 
 // ------------------------------------------------------------------ loading
@@ -172,20 +247,24 @@ function setupStatic() {
   document.body.classList.add("static");
   for (const el of [$("#runSweep")?.closest(".group"), $("#importXlsx")?.closest("label"), $("#importRun")?.closest("label")]) el?.remove();
   if (!state.meta.tenants.length) return;
-  const upload = state.meta.repo ? `https://github.com/${state.meta.repo}/upload/main/assignments` : null;
-  $(".toolbar").before(h("section", { class: "banner pipeline-only", hidden: state.tab === "sweep" || state.tab === "analyze" },
-    h("strong", {}, "Published view (read-only). "),
-    "To assign or update: Download Excel → edit the yellow ✎ columns → save it as ", state.meta.tenants.map((t, i) => [i ? " / " : "", h("code", {}, `${t.id}.xlsx`)]),
-    " and upload it to the repo's assignments/ folder", upload ? [" (", h("a", { href: upload, target: "_blank", rel: "noopener noreferrer" }, "upload"), ")"] : "",
-    ". The site rebuilds with your changes."));
+  $(".toolbar").before(h("section", { class: "banner pipeline-only", hidden: state.tab === "sweep" || state.tab === "analyze" }));
+  renderStaticBanner();
 }
 
-function lockEdits() {
-  for (const el of document.querySelectorAll("#tab-findings .grid input, #tab-findings .grid select, #tab-findings .grid textarea, #tab-findings .grid button:not(.link), #tab-actions .grid input")) {
-    if (el.classList.contains("keep")) continue;
-    el.disabled = true;
-    el.title = "Read-only here: edit the Excel and upload it to assignments/";
-  }
+// The published copy used to lock every control; changes are now kept in this browser (localEdits).
+function lockEdits() { renderStaticBanner(); }
+
+function renderStaticBanner() {
+  const b = $(".banner.pipeline-only");
+  if (!b) return;
+  const n = localEdits.count();
+  const upload = state.meta.repo ? `https://github.com/${state.meta.repo}/upload/main/assignments` : null;
+  b.replaceChildren(
+    h("strong", {}, "Published view. "),
+    "Changes you make here (status, owner, notes, action items) are kept in this browser. To share them with the team: ",
+    h("button", { class: "keep", id: "myChanges", onclick: downloadMyChanges, disabled: !n }, `Download my changes${n ? ` (${n})` : ""}`),
+    " and upload the file to the repo's assignments/ folder", upload ? [" (", h("a", { href: upload, target: "_blank", rel: "noopener noreferrer" }, "upload"), ")"] : "", ". The site rebuilds with them. ",
+    ...(n ? [h("button", { class: "keep link", onclick: () => { if (confirm(`Forget the ${n} change(s) kept in this browser?`)) { localEdits.clear(); loadLedger(); toast("Changes in this browser cleared."); } } }, "Clear my changes")] : []));
 }
 
 function renderKpis() {
@@ -257,6 +336,7 @@ function renderFindingsRows() {
     const acts = f.actions ?? [];
     const isOpen = state.open.has(f.id);
     tbody.append(h("tr", {},
+      h("td", { class: "sel" }, h("input", { type: "checkbox", class: "keep sel-finding", checked: state.sel.findings.has(f.id), "aria-label": `Select: ${f.title.slice(0, 60)}`, onchange: (e) => { e.target.checked ? state.sel.findings.add(f.id) : state.sel.findings.delete(f.id); renderBulk(); } })),
       h("td", { class: "num" }, h("span", { class: `pill ${f.band}`, title: f.band }, f.score)),
       h("td", { class: "title" },
         f.url ? h("a", { href: f.url, target: "_blank", rel: "noopener noreferrer" }, f.title) : h("strong", {}, f.title),
@@ -274,6 +354,9 @@ function renderFindingsRows() {
     ));
     if (isOpen) tbody.append(detailRow(f));
   }
+  const visible = new Set(rows.map((f) => f.id));
+  for (const id of [...state.sel.findings]) if (!visible.has(id)) state.sel.findings.delete(id);
+  renderBulk();
 }
 
 function detailRow(f) {
@@ -372,7 +455,7 @@ function complianceBlock(f) {
 
 function actionLi(f, a) {
   return h("li", { class: a.done ? "done" : "" },
-    h("input", { type: "checkbox", checked: a.done, "aria-label": "Done", onchange: (e) => mutate(() => api("PATCH", `/api/findings/${f.id}/actions/${a.id}`, { done: e.target.checked, rev: actionRevOf(f.id, a.id) })) }),
+    h("input", { type: "checkbox", checked: a.done, "aria-label": "Done", onchange: (e) => mutate(() => api("PATCH", `/api/findings/${f.id}/actions/${a.id}`, { done: e.target.checked, rev: actionRevOf(f.id, a.id) }), e.target.checked ? "Action marked done" : "Action reopened") }),
     h("span", { class: "t" }, a.title),
     assigneeInput(a.assignee, "unassigned", (v) => mutate(() => api("PATCH", `/api/findings/${f.id}/actions/${a.id}`, { assignee: v, rev: actionRevOf(f.id, a.id) }), v ? `Action assigned to ${v}` : "Action unassigned")),
     dateInput(a.due, (v) => mutate(() => api("PATCH", `/api/findings/${f.id}/actions/${a.id}`, { due: v || null, rev: actionRevOf(f.id, a.id) }))),
@@ -394,12 +477,16 @@ function renderActions() {
     .sort((x, y) => String(x.a.due ?? "9999").localeCompare(String(y.a.due ?? "9999")));
   $("#actionsEmpty").hidden = rows.length > 0;
   $("#actions tbody").replaceChildren(...rows.map(({ f, a }) => h("tr", {},
-    h("td", {}, h("input", { type: "checkbox", checked: a.done, "aria-label": "Done", onchange: (e) => mutate(() => api("PATCH", `/api/findings/${f.id}/actions/${a.id}`, { done: e.target.checked, rev: actionRevOf(f.id, a.id) })) })),
+    h("td", { class: "sel" }, h("input", { type: "checkbox", class: "keep sel-action", checked: state.sel.actions.has(`${f.id}|${a.id}`), "aria-label": `Select: ${a.title.slice(0, 60)}`, onchange: (e) => { const k = `${f.id}|${a.id}`; e.target.checked ? state.sel.actions.add(k) : state.sel.actions.delete(k); renderBulk(); } })),
+    h("td", {}, h("input", { type: "checkbox", class: "keep", checked: a.done, "aria-label": "Done", onchange: (e) => mutate(() => api("PATCH", `/api/findings/${f.id}/actions/${a.id}`, { done: e.target.checked, rev: actionRevOf(f.id, a.id) }), e.target.checked ? "Action marked done" : "Action reopened") })),
     h("td", {}, a.title),
     h("td", { class: "title" }, h("button", { class: "link", onclick: () => { state.open.add(f.id); switchTab("findings"); } }, f.title.slice(0, 80)), h("div", { class: "buyer" }, f.buyer || "")),
     h("td", {}, assigneeInput(a.assignee, "unassigned", (v) => mutate(() => api("PATCH", `/api/findings/${f.id}/actions/${a.id}`, { assignee: v, rev: actionRevOf(f.id, a.id) }), v ? `Assigned to ${v}` : "Unassigned"))),
     h("td", {}, dueCell(a.due)),
   )));
+  const visible = new Set(rows.map(({ f, a }) => `${f.id}|${a.id}`));
+  for (const k of [...state.sel.actions]) if (!visible.has(k)) state.sel.actions.delete(k);
+  renderBulk();
 }
 
 function switchTab(tab) {
@@ -418,6 +505,8 @@ $("#me").addEventListener("change", (e) => { store.set("rfp.me", e.target.value.
 for (const id of ["q", "fIndustry", "fBand", "fStatus", "fAssignee", "fChanged"]) $(`#${id}`).addEventListener("input", renderFindings);
 for (const id of ["aAssignee", "aShowDone"]) $(`#${id}`).addEventListener("input", renderActions);
 for (const b of document.querySelectorAll(".main-tabs button")) b.addEventListener("click", () => switchTab(b.dataset.tab));
+$("#selAllFindings").addEventListener("change", (e) => { for (const b of document.querySelectorAll("#findings .sel-finding")) { b.checked = e.target.checked; } for (const f of filtered()) e.target.checked ? state.sel.findings.add(f.id) : state.sel.findings.delete(f.id); renderBulk(); });
+$("#selAllActions").addEventListener("change", (e) => { for (const b of document.querySelectorAll("#actions .sel-action")) { b.checked = e.target.checked; b.dispatchEvent(new Event("change")); } });
 
 $("#runSweep").addEventListener("click", async (e) => {
   const btn = e.currentTarget;
@@ -486,15 +575,90 @@ const R = () => window.RFP;
 const GENERAL = "all";
 
 /** Published site: decisions (status, owner) made here are kept in this browser only, over the published data. */
+/**
+ * Published copy: every change made here (status, owner, notes, go/no-go, compliance,
+ * action items) is kept in this browser and re-applied over the published data on each
+ * load, with the same rules as the server (lib/ledger.mjs updateFinding / updateAction).
+ * "Download my changes" turns them into an assignments sheet to share with the team.
+ */
 const localEdits = {
-  all() { try { return JSON.parse(localStorage.getItem("rfp.edits") || "{}"); } catch { return {}; } },
-  save(id, patch) { try { const e = this.all(); e[id] = { ...e[id], ...patch, at: new Date().toISOString() }; localStorage.setItem("rfp.edits", JSON.stringify(e)); } catch { /* private window */ } },
+  KEY: "rfp.edits",
+  all() {
+    try {
+      const raw = JSON.parse(localStorage.getItem(this.KEY) || "{}");
+      // Older entries were a flat patch ({ status, at }).
+      for (const [id, e] of Object.entries(raw)) if (e && !e.patch && !e.actions && !e.newActions) { const { at, ...patch } = e; raw[id] = { patch, at }; }
+      return raw;
+    } catch { return {}; }
+  },
+  write(e) { try { localStorage.setItem(this.KEY, JSON.stringify(e)); } catch { throw new Error("This browser would not keep the change (storage full or blocked)."); } },
+  entry(e, id) { return (e[id] = e[id] ?? {}); },
+  patchFinding(id, patch) {
+    const e = this.all(), x = this.entry(e, id), cur = x.patch ?? {};
+    x.patch = { ...cur, ...patch, ...(patch.goNoGo ? { goNoGo: { ...(cur.goNoGo ?? {}), ...patch.goNoGo } } : {}), ...(patch.compliance ? { compliance: { ...(cur.compliance ?? {}), ...Object.fromEntries(Object.entries(patch.compliance).map(([k, v]) => [k, { ...(cur.compliance?.[k] ?? {}), ...v }])) } } : {}), ...(cur.acknowledgeChange || patch.acknowledgeChange ? { acknowledgeChange: true } : {}) };
+    delete x.patch.rev;
+    x.at = new Date().toISOString();
+    this.write(e);
+  },
+  patchAction(id, aid, patch) {
+    const e = this.all(), x = this.entry(e, id);
+    const local = (x.newActions ?? []).find((a) => a.id === aid);
+    if (local) Object.assign(local, patch); else x.actions = { ...(x.actions ?? {}), [aid]: { ...(x.actions?.[aid] ?? {}), ...patch } };
+    x.at = new Date().toISOString();
+    this.write(e);
+  },
+  addAction(id, action) { const e = this.all(), x = this.entry(e, id); x.newActions = [...(x.newActions ?? []), action]; x.at = new Date().toISOString(); this.write(e); },
+  count() { return Object.keys(this.all()).length; },
+  clear() { try { localStorage.removeItem(this.KEY); } catch { /* ignore */ } },
   apply(ledger) {
     const e = this.all();
-    for (const f of ledger.findings ?? []) if (e[f.id]) { const { at, ...patch } = e[f.id]; Object.assign(f, patch, { localEdit: at }); }
+    for (const f of ledger.findings ?? []) {
+      const x = e[f.id];
+      if (!x) continue;
+      if (x.patch) applyFindingPatch(f, x.patch);
+      for (const [aid, p] of Object.entries(x.actions ?? {})) { const a = (f.actions ?? []).find((y) => y.id === aid); if (a) Object.assign(a, p); }
+      f.actions = [...(f.actions ?? []), ...(x.newActions ?? []).filter((a) => !(f.actions ?? []).some((y) => y.id === a.id))];
+      f.localEdit = x.at;
+    }
     return ledger;
   },
 };
+
+/** The server's update rules (lib/ledger.mjs updateFinding), for changes kept in this browser. */
+function applyFindingPatch(f, p) {
+  if (p.status != null && !(state.meta?.statuses ?? [p.status]).includes(p.status)) throw new Error(`Unknown status "${p.status}".`);
+  const before = f.assignee;
+  for (const k of ["assignee", "status", "notes", "lossReason", "awardee"]) if (p[k] != null) f[k] = String(p[k]).trim();
+  if (p.estimatedValue !== undefined) { const v = p.estimatedValue === "" || p.estimatedValue == null ? null : Number(String(p.estimatedValue).replace(/[^0-9.]/g, "")); if (v == null || Number.isFinite(v)) f.estimatedValue = v; }
+  if (p.goNoGo) f.goNoGo = { ...(f.goNoGo ?? {}), ...p.goNoGo };
+  if (p.acknowledgeChange) f.changed = null;
+  if (p.compliance) for (const [rid, v] of Object.entries(p.compliance)) f.compliance = { ...(f.compliance ?? {}), [rid]: { ...(f.compliance?.[rid] ?? {}), ...v } };
+  if (p.draftResponse != null) { f.draft = { ...(f.draft ?? {}), response: String(p.draftResponse) }; f.draftEdited = true; }
+  if (p.assignee != null && f.assignee && f.assignee !== before) for (const a of f.actions ?? []) if (!a.assignee && !a.done) a.assignee = f.assignee;
+  return f;
+}
+
+/** Published copy: the dashboard's writes, kept in this browser instead of on a server. */
+function staticWrite(method, path, body = {}) {
+  let m;
+  if (method === "PATCH" && (m = path.match(/^\/api\/findings\/([\w-]+)$/))) {
+    const { rev, ...patch } = body;
+    if (patch.status != null && !state.meta.statuses.includes(patch.status)) throw new Error(`Unknown status "${patch.status}".`);
+    localEdits.patchFinding(m[1], patch);
+    return {};
+  }
+  if (method === "PATCH" && (m = path.match(/^\/api\/findings\/([\w-]+)\/actions\/([\w.-]+)$/))) {
+    const patch = Object.fromEntries(["done", "assignee", "due", "title"].filter((k) => body[k] !== undefined).map((k) => [k, k === "done" ? !!body[k] : body[k]]));
+    localEdits.patchAction(m[1], m[2], patch);
+    return {};
+  }
+  if (method === "POST" && (m = path.match(/^\/api\/findings\/([\w-]+)\/actions$/))) {
+    if (!String(body.title ?? "").trim()) throw new Error("An action needs a title.");
+    localEdits.addAction(m[1], { id: `local-${Date.now().toString(36)}`, title: String(body.title).trim(), assignee: String(body.assignee ?? "").trim(), due: body.due || null, done: false, source: "person", rev: 0 });
+    return {};
+  }
+  throw new Error("That is not available on the published copy. Use the local dashboard (npm run dashboard).");
+}
 
 async function fetchLedgerFor(tid) {
   if (STATIC) { const r = await fetch(`data/${tid}.json`, { cache: "no-cache" }); return localEdits.apply(r.ok ? await r.json() : { findings: [], runs: [], gaps: [] }); }
@@ -808,24 +972,61 @@ function rawToFinding(p) {
     capabilities: caps.map(({ id, label, matched }) => ({ id, label, matched })) };
 }
 
+/**
+ * The published page reads a public website through one reader service (r.jina.ai): only the
+ * website's address is sent; the pages come back as text and are read here. The page's security
+ * policy allows no other outside connection. The local dashboard reads websites itself.
+ */
+const READER = "https://r.jina.ai/";
+async function readThroughService(url) {
+  const r = await fetch(`${READER}${url}`, { headers: { "X-With-Links-Summary": "true" } });
+  if (r.status === 429) throw new Error("the reader service is busy (it reads 20 pages a minute); try again in a minute");
+  if (!r.ok) throw new Error(`the reader service could not read ${url} (HTTP ${r.status})`);
+  return r.text();
+}
+
+async function buildFromWebsiteStatic(home) {
+  const why = R().blockedReason(home);
+  if (why) throw new Error(`${home} is not read: ${why}`);
+  const first = R().markdownFacts(await readThroughService(home), home);
+  if (!first.text || first.text.length < 200) throw new Error("the page came back almost empty (it may need a sign-in, or block readers)");
+  const pages = [first];
+  for (const u of R().profileLinks(home, first, 6)) {
+    if (R().blockedReason(u)) continue;
+    try { pages.push(R().markdownFacts(await readThroughService(u), u)); } catch { /* skip one page, keep the rest */ }
+  }
+  const profile = R().buildProfile({ website: home, pages });
+  profile.readVia = "r.jina.ai (public reader service)";
+  // The pages read are your product knowledge: add them to the reference library in this browser.
+  for (const p of pages) { const r = R().makeReference({ source: p.url, title: `${profile.name}: ${p.title || p.url}`, kind: "link", text: p.text }); if (!r.error) await idb.put("references", r.id, r); }
+  return profile;
+}
+
 async function buildFromWebsite(url) {
   if (!url) return toast("Enter your company's website first.", true);
   const home = /^https?:\/\//i.test(url) ? url : `https://${url}`;
-  if (STATIC) {
-    // The published page's security policy lets it talk only to its own site, so it
-    // cannot read another website. Guide the person to paste or upload instead.
-    state.profileFallback = true; state.pendingWebsite = home;
-    renderCompany();
-    $("#pText")?.focus();
-    return;
-  }
   const btn = $("#pBuild");
   if (btn) { btn.disabled = true; btn.textContent = "Reading your website…"; }
+  if (STATIC) {
+    try {
+      const profile = await buildFromWebsiteStatic(home);
+      await saveProfile(profile); state.postings = null; await loadPostings();
+      await refreshKnowledge();
+      state.profileEditing = false; state.profileFallback = false; state.pendingWebsite = null;
+      toast(`Read ${profile.pagesRead.length} page(s) of ${profile.name}. Check the summary below and switch off anything that is wrong.`);
+    } catch (e) {
+      state.profileFallback = true; state.pendingWebsite = home;
+      toast(`Could not read the website: ${e.message}. Paste its text or upload a brochure instead.`, true);
+    }
+    renderCompany(); renderSweepResults();
+    return;
+  }
   try {
     const r = await fetch("/api/profile/build", { method: "POST", headers: { "X-RFP-Dashboard": "1", "content-type": "application/json" }, body: JSON.stringify({ url: home }) });
     const profile = await r.json();
     if (!r.ok) throw new Error(profile.error);
     state.profile = profile; state.postings = null; await loadPostings();
+    await refreshKnowledge(); // the server added the website's pages to the reference library
     state.profileEditing = true;
     toast(`Read ${profile.pagesRead?.length ?? 1} page(s) of ${profile.name}: ${profile.capabilities.length} capabilit${profile.capabilities.length === 1 ? "y" : "ies"}, ${profile.industries.length} industr${profile.industries.length === 1 ? "y" : "ies"}. Review it below.`);
   } catch (e) {
@@ -833,6 +1034,16 @@ async function buildFromWebsite(url) {
     toast(`${e.message}. Paste the text of your website or upload a brochure instead.`, true);
   }
   renderCompany(); renderSweepResults();
+}
+
+/** Pasted company text is product knowledge too: add it to the reference library. */
+async function addProfileReference(text, name) {
+  const source = `${name || "Your company"}: company profile (pasted text)`;
+  try {
+    if (STATIC) { const r = R().makeReference({ source, kind: "file", text }); if (r.passages.length) await idb.put("references", r.id, r); }
+    else await fetch("/api/library/references", { method: "POST", headers: { "X-RFP-Dashboard": "1", "content-type": "application/json" }, body: JSON.stringify({ files: [{ name: source, text }] }) });
+    await refreshKnowledge();
+  } catch { /* the profile still works without it */ }
 }
 
 async function buildFromText(text, name, website) {
@@ -845,6 +1056,7 @@ async function buildFromText(text, name, website) {
   else if (profile.name === "Your company" && site) { try { profile.name = new URL(site).hostname.replace(/^www\./, "").split(".")[0].replace(/^./, (c) => c.toUpperCase()); } catch { /* keep */ } }
   state.pendingWebsite = null;
   await saveProfile(profile); await loadPostings();
+  await addProfileReference(text, profile.name);
   state.profileEditing = true; state.profileFallback = false;
   toast(`Profile built: ${profile.capabilities.length} capabilit${profile.capabilities.length === 1 ? "y" : "ies"}, ${profile.industries.length} industr${profile.industries.length === 1 ? "y" : "ies"}`);
   renderCompany(); renderSweepResults();
@@ -868,11 +1080,13 @@ function renderCompany() {
     box.replaceChildren(
       h("div", { class: "company-head" }, h("h2", {}, "Your company"), h("span", { class: "hint" }, "Tell the sweep what you sell. It reads your website, works out your offering, and scores every RFP against it.")),
       h("div", { class: "row company-row" }, url, h("button", { id: "pBuild", class: "primary", onclick: () => buildFromWebsite(url.value.trim()) }, "Understand my business")),
+    // replaceChildren prints a null as the text "null": spread the optional notice.
+    ...(STATIC ? [h("p", { class: "hint reader-note" }, "Reads your home page and up to six product and about pages through r.jina.ai, a public reader service: only the website's address is sent, and the pages come back as text. Internal and private addresses are never sent.")] : []),
       h("details", { class: "company-alt", open: state.profileFallback || undefined },
-        h("summary", {}, STATIC ? "Can't read your website here? Paste text or upload a brochure" : "Or paste text / upload a brochure"),
-        state.profileFallback ? h("p", { class: "notice" }, STATIC ? "For security, this published page can only talk to its own site, so it cannot read yours. " : "The website could not be read. ",
+        h("summary", {}, "Or paste text / upload a brochure"),
+        state.profileFallback ? h("p", { class: "notice" }, "The website could not be read. ",
           state.pendingWebsite ? ["Open ", h("a", { href: state.pendingWebsite, target: "_blank", rel: "noopener noreferrer" }, state.pendingWebsite.replace(/^https?:\/\//, "")), ", "] : "Open your website, ",
-          "copy the text of its home, products and about pages, and paste it here (or upload a brochure).", STATIC ? " The local dashboard (npm run dashboard) reads the website for you." : "") : null,
+          "copy the text of its home, products and about pages, and paste it here (or upload a brochure).") : null,
         name, text, h("div", { class: "row" }, file, h("button", { id: "pBuildText", class: state.profileFallback ? "primary" : "keep", onclick: () => buildFromText(text.value, name.value.trim(), url.value.trim()) }, "Build profile from text"))));
     return;
   }
@@ -891,7 +1105,8 @@ function renderCompany() {
         h("button", { class: "keep", onclick: () => { state.profileEditing = !editing; renderCompany(); } }, editing ? "Done" : "Edit profile"),
         p.website && !STATIC ? h("button", { class: "keep", onclick: () => buildFromWebsite(p.website) }, "Re-read website") : null,
         h("button", { class: "keep link", onclick: () => { if (confirm("Remove this company profile?")) clearProfile(); } }, "Remove"))),
-    p.summary ? h("p", { class: "co-summary" }, p.summary) : null,
+    h("div", { class: "co-understood" }, h("h4", {}, "What we understood"), h("p", { class: "co-summary", id: "coSummary" }, R().profileSummary(p)),
+      p.pagesRead?.length ? h("details", {}, h("summary", {}, `Pages read (${p.pagesRead.length})`), h("ul", { class: "plain" }, ...p.pagesRead.map((u) => h("li", {}, h("a", { href: u, target: "_blank", rel: "noopener noreferrer" }, u.replace(/^https?:\/\//, "")))))) : null),
     h("div", { class: "co-grid" },
       h("div", {}, h("h4", {}, "What you sell"), h("div", { class: "chips" }, ...(p.capabilities.length ? p.capabilities.map((c) => chip(c, c.label, rerender)) : [h("span", { class: "hint" }, "No capability recognised. Add your terms below.")]),
         editing ? h("select", { class: "add-cap", "aria-label": "Add a capability", onchange: (e) => { const c = state.meta.capabilities.find((x) => x.id === e.target.value); if (c && !p.capabilities.some((x) => x.id === c.id)) p.capabilities.push({ id: c.id, label: c.label, strength: 0, evidence: ["added by you"], on: true }); rerender(); } },
@@ -899,7 +1114,7 @@ function renderCompany() {
       h("div", {}, h("h4", { title: "Read from your website for context. Fit is scored on what you sell, not on the buyer's industry." }, "Who you serve (context)"), h("div", { class: "chips" }, ...(p.industries.length ? p.industries.map((i) => h("span", { class: "tag", title: i.evidence?.length ? `From your site: ${i.evidence.join(", ")}` : "" }, i.label)) : [h("span", { class: "hint" }, "None named on the site.")]))),
       h("div", {}, h("h4", {}, "Platforms"), h("div", { class: "chips" }, ...(p.platforms.length ? p.platforms.map((x) => chip(x, x.name, rerender)) : [h("span", { class: "hint" }, "None named.")]))),
       h("div", { class: "co-terms" }, h("h4", {}, "Your terms"), editing ? [kw, h("div", { class: "hint" }, "Comma-separated. RFPs using these words score higher.")] : h("div", { class: "chips" }, ...(p.keywords ?? []).slice(0, 14).map((k) => h("span", { class: "tag" }, k))))),
-    editing ? h("div", { class: "row" }, h("label", {}, "Name ", nm), h("button", { class: "primary", onclick: async () => { p.keywords = kw.value.split(",").map((x) => x.trim()).filter(Boolean); p.name = nm.value.trim() || p.name; state.profileEditing = false; await rerender(); toast("Profile saved. Every RFP is re-scored against it."); } }, "Save profile")) : null);
+    ...(editing ? [h("div", { class: "row" }, h("label", {}, "Name ", nm), h("button", { class: "primary", onclick: async () => { p.keywords = kw.value.split(",").map((x) => x.trim()).filter(Boolean); p.name = nm.value.trim() || p.name; state.profileEditing = false; await rerender(); toast("Profile saved. Every RFP is re-scored against it."); } }, "Save profile"))] : []));
 }
 
 
@@ -1110,12 +1325,13 @@ async function renderExport() {
   const t = state.library.template;
   box.replaceChildren(
     h("h2", {}, "Export RFP responses"),
-    h("p", { class: "hint" }, `Pick a pipeline and the opportunities; each gets its responses filled into ${t ? `your template (${t.name})` : "the built-in Word layout"}, in one .zip with a summary workbook. Saved drafts are used as they are; the rest are drafted now from your approved answers and references. Read in your browser; nothing is uploaded.`),
+    h("p", { class: "hint" }, `Pick a pipeline and the opportunities. Each gets a Word document with its responses, filled into ${t ? `your template (${t.name})` : "the built-in Word layout"}: one opportunity downloads the document itself, several come in one .zip. Saved drafts are used as they are; the rest are drafted now from your approved answers, past responses, reference articles and your website profile. Made in your browser; nothing is uploaded.`),
     h("div", { class: "row" },
       h("label", {}, "Pipeline ", h("select", { id: "xPipeline", onchange: (e) => { state.exportTenant = e.target.value; renderExport(); } }, ...tenants.map((x) => h("option", { value: x.id, selected: x.id === tid }, x.name)))),
       h("label", {}, "Opportunities ", h("select", { id: "xStatus", onchange: (e) => { state.exportFilter = e.target.value; renderExport(); } },
         ...[["worked", "Being worked (Qualifying, Pursuing, Drafting)"], ["submitted", "Submitted"], ["open", "All open, not past due"], ["all", "All"]].map(([v, l]) => h("option", { value: v, selected: v === state.exportFilter }, l)))),
-      h("label", { class: "check" }, h("input", { type: "checkbox", id: "xSummary", checked: true }), " Include a summary workbook")),
+      h("label", { class: "check" }, h("input", { type: "checkbox", id: "xSummary", checked: false }), " Include a summary workbook of all answers")),
+    knowledgeLine(),
     // replaceChildren does not flatten arrays (it would print "[object HTMLDivElement]"): spread them.
     ...(list.length ? [
       h("div", { class: "row" }, h("span", { class: "hint" }, `${pick.size} of ${list.length} selected`),
@@ -1126,8 +1342,32 @@ async function renderExport() {
         h("td", { class: "title" }, f.title, h("div", { class: "buyer" }, f.buyer || "")),
         h("td", {}, f.closeDate ?? "—"), h("td", {}, f.status ?? "New"),
         h("td", {}, hasWork(f) ? h("span", { class: "tag" }, "saved draft") : h("span", { class: "tag muted" }, "drafted at export"))))))),
-      h("div", { class: "row" }, h("button", { class: "primary", id: "xRun", disabled: !pick.size, onclick: () => exportRfpResponses(tid, list.filter((f) => pick.has(f.id))) }, `Export ${pick.size} response${pick.size === 1 ? "" : "s"} (.zip)`)),
+      h("div", { class: "row" }, h("button", { class: "primary", id: "xRun", disabled: !pick.size, onclick: () => exportRfpResponses(tid, list.filter((f) => pick.has(f.id))) }, pick.size === 1 ? "Export the response (Word)" : `Export ${pick.size} responses (.zip)`)),
     ] : [h("p", { class: "empty" }, state.exportFilter === "worked" ? "No opportunity is being qualified, pursued or drafted in this pipeline yet. Choose All open, or mark some Pursue first." : "No opportunities match.")]));
+}
+
+/** What the answers are drafted from, so an empty library is obvious before exporting placeholders. */
+function knowledgeLine() {
+  const kn = state.meta.knowledge ?? [];
+  const approved = kn.filter((e) => e.kind !== "reference").length, refs = kn.filter((e) => e.kind === "reference").length;
+  const empty = !approved && !refs;
+  return h("p", { class: `hint knowledge ${empty ? "err" : ""}` }, `Answers are drafted from ${approved} approved answer${approved === 1 ? "" : "s"} and ${refs} passage${refs === 1 ? "" : "s"} from your past responses, articles and website${state.profile ? `, with ${state.profile.name}'s profile for the company overview` : ""}.`,
+    empty ? " Add past responses, articles or your company website first, or most answers will be placeholders for SMEs." : "");
+}
+
+/** One opportunity's response as a Word document (or your Excel template), from its workspace. */
+async function exportWorkspace(ws) {
+  try {
+    if (!ws.answers) runDraft(ws);
+    if (!ws.answers) return;
+    const libs = await loadExportLibs();
+    const template = await templateBuffer();
+    const f = ws.finding ?? { id: slug(ws.title), title: ws.title || "RFP", buyer: ws.buyer, url: ws.url, closeDate: ws.analysis?.keyData?.dates?.closing ?? null };
+    const data = R().responseData(f, { answers: ws.answers, proposal: ws.proposal ?? "", company: state.profile?.name ?? "", profile: state.profile });
+    const one = await R().exportOne(libs, { finding: f, data }, { template });
+    downloadBlob(one.name, new Blob([one.bytes], { type: one.kind === "xlsx" ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" : "application/vnd.openxmlformats-officedocument.wordprocessingml.document" }));
+    toast(`Exported ${one.name}, filled into ${template ? template.name : "the built-in Word layout"}.${ws.proofread?.signedOff ? "" : " Proofread it before submission."}`);
+  } catch (e) { toast(`Export failed: ${e.message}`, true); }
 }
 
 /** Saved drafts where they exist; otherwise draft now from what the sweep read and the knowledge base. */
@@ -1136,7 +1376,7 @@ function answersFor(f) {
   if (work?.answers?.length) return { answers: work.answers, proposal: work.proposal ?? "" };
   const analysis = R().analyzeRfp({ text: f.sourceText || f.title, title: f.title, source: f.url ?? "", packs: state.meta.packs, profile: state.profile, buyer: f.buyer, now: new Date(), closeDate: f.closeDate, known: f.rfp ?? null });
   const answers = R().draftAnswers(analysis.requirements, state.meta.knowledge, { matrix: state.meta.matrix, buyer: f.buyer ?? "" });
-  const proposal = R().buildProposal(analysis, answers, { text: f.sourceText ?? "", buyer: f.buyer ?? "", companyName: state.profile?.name ?? "", profile: state.profile?.summary ? { summary: `${state.profile.name}, from its website: ${state.profile.summary}` } : {} });
+  const proposal = R().buildProposal(analysis, answers, { text: f.sourceText ?? "", buyer: f.buyer ?? "", companyName: state.profile?.name ?? "", profile: profileForProposal() });
   return { answers: answers.length ? answers : [{ reqId: "", section: "", requirement: "No requirements or questions were found in what the sweep read.", draft: "[SME validation required] Load the RFP document in the workspace to draft each answer.", status: "Not started", owner: "RFP Manager", confidence: "low", level: "mandatory" }], proposal };
 }
 
@@ -1147,13 +1387,21 @@ async function exportRfpResponses(tid, chosen) {
   try {
     const libs = await loadExportLibs();
     const template = await templateBuffer();
-    const items = chosen.map((f) => { const { answers, proposal } = answersFor(f); return { finding: f, data: R().responseData(f, { answers, proposal, company: state.profile?.name ?? "" }) }; });
+    const items = chosen.map((f) => { const { answers, proposal } = answersFor(f); return { finding: f, data: R().responseData(f, { answers, proposal, company: state.profile?.name ?? "", profile: state.profile }) }; });
     const name = state.meta.tenants.find((x) => x.id === tid)?.name ?? tid;
-    const r = await R().exportResponses(libs, items, { template, pipeline: name, includeSummary: $("#xSummary")?.checked !== false });
-    downloadBlob(`rfp-responses-${slug(name)}-${new Date().toISOString().slice(0, 10)}.zip`, new Blob([r.bytes], { type: "application/zip" }));
-    toast(`Exported ${items.length} response${items.length === 1 ? "" : "s"} into ${template ? template.name : "the built-in Word layout"}: ${r.files.length} file(s)${$("#xSummary")?.checked !== false ? " and a summary workbook" : ""}.`);
+    const withSummary = !!$("#xSummary")?.checked;
+    if (items.length === 1 && !withSummary) {
+      // One opportunity: the Word (or Excel) document itself, no zip.
+      const one = await R().exportOne(libs, items[0], { template });
+      downloadBlob(one.name, new Blob([one.bytes], { type: one.kind === "xlsx" ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" : "application/vnd.openxmlformats-officedocument.wordprocessingml.document" }));
+      toast(`Exported ${one.name}, filled into ${template ? template.name : "the built-in Word layout"}.`);
+    } else {
+      const r = await R().exportResponses(libs, items, { template, pipeline: name, includeSummary: withSummary });
+      downloadBlob(`rfp-responses-${slug(name)}-${new Date().toISOString().slice(0, 10)}.zip`, new Blob([r.bytes], { type: "application/zip" }));
+      toast(`Exported ${items.length} response${items.length === 1 ? "" : "s"} into ${template ? template.name : "the built-in Word layout"}: ${r.files.length} file(s)${withSummary ? " and a summary workbook" : ""}, in one .zip.`);
+    }
   } catch (e) { toast(`Export failed: ${e.message}`, true); }
-  if (btn) { btn.disabled = false; btn.textContent = `Export ${chosen.length} response${chosen.length === 1 ? "" : "s"} (.zip)`; }
+  if (btn) { btn.disabled = false; btn.textContent = chosen.length === 1 ? "Export the response (Word)" : `Export ${chosen.length} responses (.zip)`; }
 }
 
 // =================================================================== Configuration
@@ -1376,7 +1624,18 @@ function runDraft(ws) {
 
 /** The proposal draft, in the company's name when there is a profile. */
 function proposalFor(ws) {
-  return R().buildProposal(ws.analysis, ws.answers, { text: ws.text, buyer: ws.buyer ?? "", companyName: state.profile?.name ?? "", profile: state.profile?.summary ? { summary: `${state.profile.name}, from its website: ${state.profile.summary}` } : {} });
+  return R().buildProposal(ws.analysis, ws.answers, { text: ws.text, buyer: ws.buyer ?? "", companyName: state.profile?.name ?? "", profile: profileForProposal() });
+}
+
+/** Your product knowledge for the proposal: the website's own description and offering, marked to confirm. */
+function profileForProposal() {
+  const p = state.profile;
+  if (!p) return {};
+  const caps = (p.capabilities ?? []).filter((c) => c.on !== false).map((c) => c.label), plats = (p.platforms ?? []).filter((x) => x.on !== false).map((x) => x.name);
+  return {
+    summary: p.summary ? `${p.name}, from its website: ${p.summary}` : "",
+    differentiators: [caps.length ? `${p.name} offers ${caps.join(", ")} (from its website; confirm the claims you keep).` : null, plats.length ? `Built on or working with ${plats.join(", ")}.` : null].filter(Boolean),
+  };
 }
 
 /** Text changed after proofreading or the submission check: both must be done again. */
@@ -1447,7 +1706,7 @@ async function patchFinding(ws, patch, msg) {
   if (STATIC) {
     // No server here: keep the decision in this browser, visibly, and say how to share it.
     Object.assign(ws.finding, patch, { localEdit: new Date().toISOString() });
-    localEdits.save(ws.finding.id, patch);
+    localEdits.patchFinding(ws.finding.id, patch);
     toast(`${msg}. Saved in this browser only.${closedNow} To share it with the team, set it in the Excel and upload it to assignments/.`);
   } else {
     if (ws.finding.raw && !(await addToPipeline(ws))) return;
@@ -1525,6 +1784,7 @@ function renderWorkspace(ws) {
         h("div", { class: "buyer" }, ws.buyer || "buyer not stated", f?.status ? [" · ", h("span", { class: `tag status-tag st-${slug(f.status)}` }, f.status)] : "", f?.closeDate ? ` · closes ${f.closeDate}` : a?.keyData?.dates?.closing ? ` · closes ${a.keyData.dates.closing}` : "", ws.url ? [" · ", h("a", { href: ws.url, target: "_blank", rel: "noopener noreferrer" }, "source")] : "")),
       h("div", { class: "ws-actions" },
         h("button", { class: "keep", onclick: () => exportScoring(ws), disabled: !a }, "Export scoring file (.xlsx)"),
+        h("button", { class: "keep primary", id: "wsExportDocx", onclick: () => exportWorkspace(ws), disabled: !a, title: state.library?.template ? `Filled into ${state.library.template.name}` : "Filled into the built-in Word layout" }, "Export response (Word)"),
         h("button", { class: "keep", onclick: () => downloadText(`${slug(ws.title)}-proposal-draft.md`, ws.proposal ?? ""), disabled: !ws.proposal }, "Download proposal (.md)"),
         !STATIC && f && !f.raw ? h("button", { class: `keep ${state.crm?.links?.[f.id] ? "linked" : ""}`, id: "crmOpen", onclick: async () => { if (!state.crm) { try { state.crm = await fetch("/api/crm").then((r) => r.json()); } catch { state.crm = { platform: "salesforce", links: {} }; } } ws.crmOpen = !ws.crmOpen; renderWorkspace(ws); } }, `${R().CRM_NAMES[state.crm?.platform ?? "salesforce"]}${state.crm?.links?.[f.id] ? " ✓" : "…"}`) : null,
         h("button", { class: "keep", onclick: () => { if (box.classList.contains("ws-overlay")) hideOverlay(ws.target); else box.replaceChildren(); if (ws === state.ws) { state.ws = null; renderSweepResults(); } } }, "Close ✕"))),

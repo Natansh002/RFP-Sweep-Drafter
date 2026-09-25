@@ -26,7 +26,7 @@ fs.rmSync(OUT, { recursive: true, force: true });
 fs.mkdirSync(path.join(OUT, "data"), { recursive: true });
 fs.mkdirSync(path.join(OUT, "downloads"), { recursive: true });
 
-const CSP = "default-src 'none'; script-src 'self'; worker-src 'self' blob:; style-src 'self'; img-src 'self' data: blob:; connect-src 'self' blob:; font-src 'self' data:; base-uri 'none'; form-action 'none'";
+const CSP = "default-src 'none'; script-src 'self'; worker-src 'self' blob:; style-src 'self'; img-src 'self' data: blob:; connect-src 'self' blob: https://r.jina.ai; font-src 'self' data:; base-uri 'none'; form-action 'none'";
 
 const tenants = [];
 for (const id of tenantIds()) {

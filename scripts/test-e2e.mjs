@@ -76,6 +76,8 @@ const F = [
   finding("any", { title: "HRIS and Payroll Cloud Based System Purchase", buyer: "Municipality of Example", country: "CA", closeDate: day(10), publishedDate: day(-5), url: "https://www.merx.com/public/solicitations/2", channel: "ca.agg.merx", body: "The Municipality seeks an HRIS and payroll system. The vendor must provide employee self service and position control." }),
   finding("any", { title: "ERP Implementation Services (past due)", buyer: "Town of Pastdue", country: "CA", closeDate: day(-5), publishedDate: day(-40), url: "https://www.merx.com/public/solicitations/3", channel: "ca.agg.merx", body: "ERP implementation services for finance and payroll. The proponent must provide references." }),
   finding("any", { title: "Financial System Replacement (won)", buyer: "City of Wonville", country: "CA", closeDate: day(-20), publishedDate: day(-60), url: "https://www.merx.com/public/solicitations/4", channel: "ca.agg.merx", body: "Financial system replacement, ERP implementation, general ledger." }),
+  finding("any", { title: "Payroll Services Review (archive test)", buyer: "Town of Archiveville", country: "CA", closeDate: day(40), publishedDate: day(-2), url: "https://www.merx.com/public/solicitations/5", channel: "ca.agg.merx", body: "Payroll services review and payroll system options for the town." }),
+  finding("any", { title: "ERP Finance Module Upgrade (lost test)", buyer: "Town of Lostville", country: "CA", closeDate: day(45), publishedDate: day(-2), url: "https://www.merx.com/public/solicitations/6", channel: "ca.agg.merx", body: "ERP finance module upgrade: general ledger and accounts payable." }),
 ];
 // What the sweep read with the HRIS RFP (its public document), as lib/sweep.mjs stores it.
 F[1].rfp = {
@@ -148,7 +150,7 @@ async function openPage(url) {
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
   // 403 and 400 come from the deliberate security probes (a write without the header, a private
   // address as the company website); server errors are caught by the response listener below.
-  page.on("console", (m) => { if (m.type() === "error" && !/favicon|404 \(Not Found\)|403 \(Forbidden\)|400 \(Bad Request\)|422 \(Unprocessable|500 \(Internal Server Error\)/.test(m.text())) errors.push(`console: ${m.text()}`); });
+  page.on("console", (m) => { if (m.type() === "error" && !/favicon|404 \(Not Found\)|403 \(Forbidden\)|400 \(Bad Request\)|422 \(Unprocessable|429 \(Too Many Requests\)|500 \(Internal Server Error\)/.test(m.text())) errors.push(`console: ${m.text()}`); });
   // A server error is always a failure; name the request so it can be fixed.
   page.on("response", async (r) => { if (r.status() >= 500) errors.push(`HTTP ${r.status()} ${r.request().method()} ${new URL(r.url()).pathname}: ${(await r.text().catch(() => "")).slice(0, 160)}`); });
   await page.goto(url);
@@ -466,21 +468,38 @@ async function suite(mode, url) {
     expect(/Reference: past-response\.txt/.test(sources), "the reference is not cited by name");
     await page.keyboard.press("Escape");
   });
-  await check(P("export: pick a pipeline and opportunities; the zip holds your filled template per opportunity and a summary"), async () => {
+  await check(P("export: one opportunity downloads its Word document, filled into your template with the past response"), async () => {
     await tab(page, "analyze"); await page.waitForTimeout(300);
+    expect(/Answers are drafted from \d+ approved answers? and [1-9]\d* passages?/.test(await page.locator("#exportCard .knowledge").textContent()), "knowledge line missing");
     await page.selectOption("#xStatus", "open"); await page.waitForTimeout(500);
     expect((await page.locator("#exportCard .export-list tbody tr").count()) >= 2, "pipeline list empty");
     await page.locator("#exportCard button", { hasText: "Select none" }).click(); await page.waitForTimeout(200);
     await page.check('#exportCard input[aria-label="Export Enterprise Resource Planning (ERP) and Payroll System"]'); await page.waitForTimeout(200);
     expect(/saved draft/.test(await page.locator("#exportCard .export-list tbody tr", { hasText: "Enterprise Resource Planning (ERP)" }).textContent()), "the saved draft is not recognised");
+    const file = await download(page, () => page.click("#xRun"));
+    await seenToast(page, /Exported enterprise-resource-planning-erp-and-payroll-system-response\.docx, filled into our-template\.docx/);
+    expect(file.endsWith(".docx"), `got ${path.basename(file)}, not a Word document`);
+    const PizZip = (await import("pizzip")).default;
+    const text = new PizZip(fs.readFileSync(file)).file("word/document.xml").asText().replace(/<[^>]+>/g, " ");
+    expect(/Enterprise Resource Planning \(ERP\) and Payroll System · ACME LETTERHEAD/.test(text) && /change network of champions/.test(text) && !/\{\{/.test(text), "template not filled");
+  });
+  await check(P("export: several opportunities come in one zip, with the summary workbook when asked"), async () => {
+    await page.locator("#exportCard button", { hasText: "Select all" }).click(); await page.waitForTimeout(200);
+    await page.check("#xSummary");
     const zipFile = await download(page, () => page.click("#xRun"));
-    await seenToast(page, /Exported 1 response into our-template\.docx: 1 file\(s\) and a summary workbook/);
+    await seenToast(page, /Exported \d+ responses into our-template\.docx: \d+ file\(s\) and a summary workbook, in one \.zip/);
     const PizZip = (await import("pizzip")).default;
     const z = new PizZip(fs.readFileSync(zipFile));
-    const docs = Object.keys(z.files).filter((n) => n.endsWith(".docx"));
-    expect(docs.length === 1 && !!z.file("all-responses.xlsx") && !!z.file("README.txt"), `zip holds: ${Object.keys(z.files).join(", ")}`);
-    const text = new PizZip(z.file(docs[0]).asUint8Array()).file("word/document.xml").asText().replace(/<[^>]+>/g, " ");
-    expect(/Enterprise Resource Planning \(ERP\) and Payroll System · ACME LETTERHEAD/.test(text) && /change network of champions/.test(text) && !/\{\{/.test(text), "template not filled");
+    expect(Object.keys(z.files).filter((n) => n.endsWith(".docx")).length >= 2 && !!z.file("all-responses.xlsx"), `zip holds: ${Object.keys(z.files).join(", ")}`);
+  });
+  await check(P("workspace: Export response (Word) downloads the filled document"), async () => {
+    await tab(page, "sweep"); await page.waitForTimeout(200);
+    await openFirst();
+    const file = await download(page, () => page.click("#wsExportDocx"));
+    await seenToast(page, /Exported .*-response\.docx, filled into our-template\.docx/);
+    const PizZip = (await import("pizzip")).default;
+    expect(/ACME LETTERHEAD/.test(new PizZip(fs.readFileSync(file)).file("word/document.xml").asText()), "not filled into the template");
+    await page.keyboard.press("Escape");
   });
 
   // ---- pipeline
@@ -504,12 +523,60 @@ async function suite(mode, url) {
     await page.check("#fChanged"); await page.waitForTimeout(150); await page.uncheck("#fChanged");
     expect(pursue >= 0, "band filter");
   });
-  await check(P("Pipeline row opens its detail panel"), async () => {
+  await check(P("Pipeline row opens its detail panel, and its fields can be edited"), async () => {
     await page.locator("#findings tbody tr button", { hasText: "Open" }).first().click(); await page.waitForTimeout(200);
     expect(await page.locator("#findings tr.detail").isVisible(), "detail did not open");
-    const locked = await page.locator("#findings tr.detail input:not([disabled])").count();
-    if (isStatic) expect(locked === 0, "published view should be read-only");
+    expect((await page.locator("#findings tr.detail textarea:disabled, #findings tr.detail input:disabled").count()) === 0, "fields are locked");
+    await page.locator("#findings tbody tr button", { hasText: "Close" }).first().click();
   });
+  await check(P("action items: tick Done, confirmed on screen, and kept after a reload"), async () => {
+    await tab(page, "actions"); await page.waitForTimeout(300);
+    // Action titles repeat across opportunities ("Go/no-go decision"): identify the row by both.
+    const rowOf = () => page.locator("#actions tbody tr", { hasText: "Payroll Services Review (archive test)" }).first();
+    const title = (await rowOf().locator("td").nth(2).textContent()).trim();
+    await rowOf().locator('input[aria-label="Done"]').check();
+    await seenToast(page, isStatic ? /Action marked done · saved in this browser/ : /Action marked done/);
+    await page.reload(); await page.waitForSelector("#sRun"); await tab(page, "actions"); await page.waitForTimeout(500);
+    await page.check("#aShowDone"); await page.waitForTimeout(200);
+    const again = page.locator("#actions tbody tr").filter({ hasText: "Payroll Services Review (archive test)" }).filter({ hasText: title }).first();
+    expect(await again.locator('input[aria-label="Done"]').isChecked(), "done not kept after a reload");
+    await page.uncheck("#aShowDone");
+  });
+  await check(P("action items: select several, Mark done"), async () => {
+    const boxes = page.locator("#actions .sel-action");
+    await boxes.nth(0).check(); await boxes.nth(1).check();
+    expect(/2 selected/.test(await page.locator("#bulkActions").textContent()), "toolbar not shown");
+    await page.locator("#bulkActions button", { hasText: "Mark done" }).click();
+    await seenToast(page, isStatic ? /2 action items marked done · saved in this browser/ : /2 action items marked done/);
+    expect(await page.locator("#bulkActions").isHidden(), "toolbar should close");
+  });
+  await check(P("pipeline: select an opportunity, Archive; another, Closed lost"), async () => {
+    await tab(page, "findings"); await page.waitForTimeout(300);
+    await page.locator("#findings tbody tr", { hasText: "Payroll Services Review (archive test)" }).locator(".sel-finding").check();
+    await page.locator("#bulkFindings button", { hasText: "Archive" }).click();
+    await seenToast(page, isStatic ? /1 opportunity → Archived · saved in this browser/ : /1 opportunity → Archived/);
+    await page.waitForTimeout(300);
+    expect(!(await page.locator("#findings tbody").textContent()).includes("Payroll Services Review (archive test)"), "archived opportunity still listed as open");
+    await page.locator("#findings tbody tr", { hasText: "ERP Finance Module Upgrade (lost test)" }).locator(".sel-finding").check();
+    await page.locator("#bulkFindings button", { hasText: "Closed lost" }).click();
+    await seenToast(page, /1 opportunity → Closed lost/);
+    await page.selectOption("#fStatus", "*"); await page.waitForTimeout(200);
+    const statuses = await page.locator("#findings tbody select[aria-label=Status]").evaluateAll((els) => els.map((e) => e.value));
+    expect(statuses.includes("Archived") && statuses.includes("Lost"), `statuses: ${statuses.join(",")}`);
+    await page.selectOption("#fStatus", "");
+  });
+  if (isStatic) {
+    await check(P("published copy: Download my changes gives an assignments sheet with them"), async () => {
+      expect(/Download my changes \(\d+\)/.test(await page.locator("#myChanges").textContent()), "no change count");
+      const file = await download(page, () => page.click("#myChanges"));
+      await seenToast(page, /Downloaded all\.xlsx: \d+ opportunit(y|ies) and \d+ action items?/);
+      const ExcelJS = (await import("exceljs")).default;
+      const wb = new ExcelJS.Workbook(); await wb.xlsx.readFile(file);
+      const statuses = []; wb.getWorksheet("Findings").eachRow((r, n) => { if (n > 1) statuses.push(r.getCell(3).text); });
+      const done = []; wb.getWorksheet("Actions").eachRow((r, n) => { if (n > 1) done.push(r.getCell(6).text); });
+      expect(path.basename(file) === "all.xlsx" && statuses.includes("Archived") && statuses.includes("Lost") && done.includes("Yes"), `sheet: ${statuses.join(",")} / ${done.join(",")}`);
+    });
+  }
   if (!isStatic || await page.locator("#exportXlsx").count()) {
     await check(P("Download Excel and Deadlines (.ics) download"), async () => {
       const x = await download(page, () => page.click("#exportXlsx")); expect(fs.readFileSync(x).subarray(0, 2).toString() === "PK", "xlsx");
@@ -651,16 +718,32 @@ Harborline Systems provides ERP financial management, fund accounting, budgeting
 Payroll and HR
 Payroll software with position control and collective agreement rules, HRIS and employee self service.
 Built on Microsoft Dynamics 365 Business Central with Power BI reporting.`;
-  await check(P("company: a website the page cannot read falls back to paste / upload, visibly"), async () => {
-    await tab(page, "sweep"); await page.waitForTimeout(150);
-    await page.fill("#pUrl", isStatic ? "www.harborline.example" : "http://127.0.0.1:4190/");
-    await page.click("#pBuild"); await page.waitForTimeout(isStatic ? 300 : 1500);
-    if (!isStatic) await seenToast(page, /Blocked|private|paste/i);
-    expect(await page.locator("#companyCard details.company-alt[open]").count() === 1, "paste / upload panel not opened");
-    const note = await page.locator("#companyCard .company-alt .notice").textContent();
-    expect(isStatic ? /can only talk to its own site/.test(note) : /could not be read/.test(note), `note: ${note}`);
-    if (isStatic) expect(await page.locator('#companyCard .company-alt .notice a[href="https://www.harborline.example"]').count() === 1, "no link to open the website");
+  // The published page reads websites through a reader service: faked here, so no test depends on the internet.
+  const READER_HOME = `Title: Fund accounting and payroll software | Harborline Systems\n\nURL Source: https://www.harborline.example/\n\nMarkdown Content:\n## Fund accounting for nonprofits and school boards\n\nHarborline Systems builds fund accounting, payroll and grant management software for nonprofits and school districts, on Microsoft Dynamics 365 Business Central.\n\nPayroll and HR\n--------------\n\nPayroll software with position control and collective agreements for school boards, with Power BI reporting on Business Central.\n\nLinks/Buttons:\n[Payroll and HR](https://www.harborline.example/solutions/payroll-hr/)\n[Contact](https://www.harborline.example/contact/)`;
+  const READER_PAYROLL = `Title: Payroll and HR | Harborline Systems\n\nMarkdown Content:\n## Payroll and HR for school districts\n\nPayroll software with position control, collective agreement rules, substitute management and an HRIS for school boards and nonprofit employers, on Business Central.`;
+  let readerMode = "down";
+  if (isStatic) await page.route("https://r.jina.ai/**", (route) => {
+    const cors = { "access-control-allow-origin": "*", "access-control-allow-headers": "x-with-links-summary", "content-type": "text/plain" };
+    if (route.request().method() === "OPTIONS") return route.fulfill({ status: 204, headers: cors });
+    if (readerMode === "down") return route.fulfill({ status: 429, headers: cors, body: "busy" });
+    return route.fulfill({ status: 200, headers: cors, body: /payroll-hr/.test(route.request().url()) ? READER_PAYROLL : READER_HOME });
   });
+  await check(P("company: a website that cannot be read falls back to paste / upload, visibly"), async () => {
+    await tab(page, "sweep"); await page.waitForTimeout(150);
+    if (isStatic) expect(/r\.jina\.ai, a public reader service: only the website's address is sent/.test(await page.locator("#companyCard").textContent()), "the reader is not disclosed");
+    await page.fill("#pUrl", isStatic ? "www.harborline.example" : "http://127.0.0.1:4190/");
+    await page.click("#pBuild"); await page.waitForTimeout(isStatic ? 600 : 1500);
+    await seenToast(page, isStatic ? /reader service is busy/ : /Blocked|private|paste/i);
+    expect(await page.locator("#companyCard details.company-alt[open]").count() === 1, "paste / upload panel not opened");
+    expect(/could not be read/.test(await page.locator("#companyCard .company-alt .notice").textContent()), "no explanation");
+  });
+  if (isStatic) {
+    await check(P("company: an internal or private address is never sent to the reader"), async () => {
+      await page.fill("#pUrl", "https://acme.sharepoint.com/sites/about");
+      await page.click("#pBuild");
+      await seenToast(page, /is not read/);
+    });
+  }
   await check(P("company: profile built from pasted text shows what it sells, as toggle chips"), async () => {
     await page.fill("#pText", PROFILE_TEXT);
     await page.click("#pBuildText"); await page.waitForTimeout(600);
@@ -672,6 +755,8 @@ Built on Microsoft Dynamics 365 Business Central with Power BI reporting.`;
   });
   await check(P("company: results are scored on the offering and filtered to what is relevant"), async () => {
     await page.click("#companyCard button:has-text('Done')").catch(() => {});
+    await page.waitForTimeout(200);
+    expect(!/(^|\s)(null|undefined)(\s|$)/.test(await page.locator("#companyCard").innerText()), "the company card shows a stray value after Done");
     await page.selectOption("#sStatus", "all"); await page.dispatchEvent("#sStatus", "change"); await page.waitForTimeout(300);
     expect(/relevant to Harborline Systems/.test(await page.locator(".results-head h2").textContent()), "heading does not say relevant to the company");
     expect(/Harborline/.test(await page.locator("#sResults thead th", { hasText: "Fit" }).getAttribute("title")), "Fit column is not the offering fit");
@@ -709,13 +794,28 @@ Built on Microsoft Dynamics 365 Business Central with Power BI reporting.`;
     expect(await page.locator("#pUrl").count() === 1, "profile not removed");
     expect(/opportunit(y|ies) found/.test(await page.locator(".results-head h2").textContent()), "results still filtered after removing the profile");
   });
+  if (isStatic) {
+    await check(P("company: the live page reads the website, summarises the business, and keeps its pages as product knowledge"), async () => {
+      readerMode = "up";
+      await page.fill("#pUrl", "https://www.harborline.example/");
+      await page.click("#pBuild");
+      await seenToast(page, /Read 2 page\(s\) of Harborline Systems/);
+      const summary = await page.locator("#coSummary").textContent();
+      expect(/^Harborline Systems sells /.test(summary) && /ERP \/ Finance/.test(summary) && /HR \/ HCM/.test(summary) && /built on .*Business Central/.test(summary) && /Read from 2 pages of harborline\.example/.test(summary), `summary: ${summary}`);
+      await tab(page, "analyze"); await page.waitForTimeout(400);
+      expect(/Harborline Systems: Payroll and HR/.test(await page.locator("#libraryCard .lib-refs").textContent()), "website pages not added as product knowledge");
+      await tab(page, "sweep");
+      await page.locator("#companyCard button", { hasText: "Remove" }).click(); await page.waitForTimeout(300);
+    });
+  }
 
   await check(P("no stray \"null\" or \"undefined\" text on any screen"), async () => {
     for (const t of ["sweep", "analyze", "findings", "actions", "config"]) {
       await tab(page, t); await page.waitForTimeout(150);
-      const text = await page.locator(`#tab-${t}`).innerText();
+      // The whole page, not only the tab: banners and toolbars sit outside it.
+      const text = await page.locator("body").innerText();
       const stray = text.match(/\bundefined\b|\bNaN\b|\[object \w+\]|(^|[\s(])null(?=[\s),.]|$)/);
-      expect(!stray, `${t} screen shows a stray value: "${stray?.[0]}"`);
+      expect(!stray, `${t} screen shows a stray value: "${stray?.[0]?.trim()}" in "…${stray ? text.slice(Math.max(0, stray.index - 80), stray.index + 40).replace(/\s+/g, " ") : ""}…"`);
     }
   });
   await check(P("no page or console errors"), async () => expect(errors.length === 0, errors.slice(0, 3).join(" · ")));

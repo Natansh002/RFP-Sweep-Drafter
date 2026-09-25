@@ -124,6 +124,18 @@ a("summary workbook: every answer, with what needs an SME", sumWb.getWorksheet("
 const xOut = await exportResponses(libs, [items[0]], { template: { name: "Our template.xlsx", buffer: await xlsxTemplate([]) }, includeSummary: false });
 a("zip with an Excel template: .xlsx per opportunity, no summary when not asked", xOut.kind === "xlsx" && xOut.files[0].endsWith(".xlsx") && !new PizZip(xOut.bytes).file("all-responses.xlsx"));
 
+// ---- one opportunity: the Word document itself, with your product knowledge
+const { exportOne } = await import("../lib/export.mjs");
+const profile = { name: "Harborline Systems", summary: "Fund accounting and payroll software for school boards and nonprofits.", capabilities: [{ id: "erp", label: "ERP / Finance implementation", on: true }, { id: "gis", label: "GIS", on: false }], platforms: [{ name: "Business Central", on: true }] };
+const withProfile = responseData(F, { answers: ANSWERS, proposal: PROPOSAL, company: "Harborline Systems", profile });
+a("product knowledge: company overview from the website profile (switched-off items left out)", /Fund accounting and payroll software/.test(withProfile.companyOverview) && /What we offer: ERP \/ Finance implementation\./.test(withProfile.companyOverview) && !/GIS/.test(withProfile.companyOverview) && /Platforms: Business Central/.test(withProfile.companyOverview));
+const single = await exportOne(libs, { finding: F, data: withProfile });
+const singleText = docText(single.bytes);
+a("single export: one Word document, named after the RFP", single.kind === "docx" && single.name === "erp-and-payroll-system-response.docx" && single.bytes[0] === 0x50);
+a("single export: About the company, then the responses", /About Harborline Systems[\s\S]*What we offer: ERP[\s\S]*We migrate in three passes/.test(singleText));
+a("no profile: the About section is left out, not left empty", !/About \[Company name\]|About Harborline/.test(docText(fillDocx(libs, sample, data))));
+a("untagged template: About the company added too", /About Harborline Systems/.test(new PizZip(fillDocx(libs, plain, withProfile)).file("word/document.xml").asText().replace(/<[^>]+>/g, " ")));
+
 // ---- private library location and the browser bundle
 process.env.RFP_LIBRARY_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "rfp-lib-"));
 a("private library: RFP_LIBRARY_DIR moves it (tests never touch real answers)", privateFile(ROOT, "template.json").startsWith(process.env.RFP_LIBRARY_DIR));

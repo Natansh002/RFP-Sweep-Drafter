@@ -375,3 +375,14 @@ button.linked { border-color: var(--pursue); color: var(--pursue); }
 .export-list { max-height: 360px; overflow-y: auto; }
 .export-list td { vertical-align: top; }
 .tag.muted { opacity: .75; }
+
+/* Select several, then act */
+th.sel, td.sel { width: 32px; text-align: center; }
+.bulk { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; background: var(--edit); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 12px; margin: 8px 0; position: sticky; top: 0; z-index: 5; }
+.bulk strong { margin-right: 4px; }
+
+/* What the profile understood */
+.co-understood { margin-top: 10px; padding: 10px 12px; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); }
+.co-understood h4 { margin: 0 0 4px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.co-understood .co-summary { margin: 0; max-width: 100ch; }
+.reader-note { margin: 6px 0 0; font-size: 12.5px; }
