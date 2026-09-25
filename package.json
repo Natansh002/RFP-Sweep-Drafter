@@ -16,18 +16,22 @@
     "validate": "node scripts/validate.mjs",
     "validate:strict": "node scripts/validate.mjs --strict",
     "build": "node scripts/build-workflows.mjs",
-    "test": "RFP_TENANTS_DIR=scripts/fixtures/tenants node scripts/test-score.mjs && RFP_TENANTS_DIR=scripts/fixtures/tenants node scripts/test-app.mjs && RFP_TENANTS_DIR=scripts/fixtures/tenants node scripts/test-analyze.mjs && RFP_TENANTS_DIR=scripts/fixtures/tenants node scripts/test-profile.mjs && RFP_TENANTS_DIR=scripts/fixtures/tenants node scripts/test-documents.mjs",
+    "test": "RFP_TENANTS_DIR=scripts/fixtures/tenants node scripts/test-score.mjs && RFP_TENANTS_DIR=scripts/fixtures/tenants node scripts/test-app.mjs && RFP_TENANTS_DIR=scripts/fixtures/tenants node scripts/test-analyze.mjs && RFP_TENANTS_DIR=scripts/fixtures/tenants node scripts/test-profile.mjs && RFP_TENANTS_DIR=scripts/fixtures/tenants node scripts/test-documents.mjs && RFP_TENANTS_DIR=scripts/fixtures/tenants node scripts/test-access.mjs",
     "check": "npm run build && npm run validate && npm test",
     "deploy:n8n": "node scripts/deploy-n8n.mjs",
     "site": "node scripts/build-site.mjs",
     "analyze": "node scripts/analyze.mjs",
     "learn": "node scripts/learn.mjs",
-    "test:e2e": "node scripts/test-e2e.mjs"
+    "test:e2e": "node scripts/test-e2e.mjs",
+    "mcp": "node scripts/mcp-server.mjs",
+    "access:apply": "node scripts/access-apply.mjs"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.1",
     "exceljs": "^4.4.0",
     "mammoth": "^1.12.3",
-    "pdfjs-dist": "^4.10.38"
+    "pdfjs-dist": "^4.10.38",
+    "zod": "^4.6.5"
   },
   "license": "UNLICENSED",
   "devDependencies": {

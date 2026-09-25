@@ -27,6 +27,7 @@
     <button role="tab" data-tab="analyze">Analyze a document</button>
     <button role="tab" data-tab="findings">Pipeline</button>
     <button role="tab" data-tab="actions">Action items</button>
+    <button role="tab" data-tab="config">Configuration</button>
   </nav>
 
   <section class="toolbar pipeline-only" hidden>
@@ -88,6 +89,7 @@
     <section id="tab-analyze" class="tab" hidden>
       <div class="card">
         <h2>Analyze an RFP document</h2>
+        <p class="intro">For an RFP you already have that the sweep did not bring in: one emailed to you, or one behind a portal sign-in (MERX, Biddingo, bids&amp;tenders). Load it and it gets the same workspace as a swept RFP: key dates, value, term and evaluation criteria, requirements and questions, risks, fit to your offering, the four roles, drafted answers from your approved answers, proofreading and the RFP submission status. Add your draft proposal too, and it shows which requirements the draft already covers.</p>
         <p class="hint">Files are read in your browser. Nothing is uploaded anywhere.</p>
         <div class="upload-grid">
           <div>
@@ -96,7 +98,7 @@
             <textarea id="aRfpText" placeholder="…or paste the solicitation text here"></textarea>
           </div>
           <div>
-            <label class="lbl" for="aPropFile">Your draft proposal (optional, for compliance screening)</label>
+            <label class="lbl" for="aPropFile">Your draft proposal (optional: shows which requirements it already covers)</label>
             <input type="file" id="aPropFile" accept=".pdf,.docx,.txt,.md,.html,.htm">
             <textarea id="aPropText" placeholder="…or paste your draft response"></textarea>
           </div>
@@ -144,6 +146,7 @@
       <p class="empty" id="actionsEmpty" hidden>No action items.</p>
     </section>
 
+    <section id="tab-config" class="tab" hidden><div id="configBody"></div></section>
   </main>
 
   <datalist id="team"></datalist>

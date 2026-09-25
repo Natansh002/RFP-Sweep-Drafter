@@ -28,6 +28,8 @@ import { readStore, writeStore, mergePostings, writeTexts, readText } from "../l
 import { effectivePack } from "../lib/pack.mjs";
 import { draftResponse, findingId } from "../lib/draft.mjs";
 import { safeLink } from "../lib/guard.mjs";
+import { validateAccess, ACCESS_ROLES } from "../lib/access.mjs";
+import { CRM_PLATFORMS, validCrmLink } from "../lib/crm.mjs";
 import { buildCalendar } from "../lib/ics.mjs";
 import { DEFAULT_GO_NO_GO, COMPLIANCE_STATUSES, saveWorkspace } from "../lib/ledger.mjs";
 import { browserBundle, VENDOR } from "../lib/bundle.mjs";
@@ -150,6 +152,38 @@ const routes = [
     return profile;
   }],
   ["GET", /^\/api\/postings$/, async () => readStore(ROOT, "postings.json", { postings: [] })],
+
+  // ---- configuration: who can open the private host, and the sales-platform link (both local files, never published)
+  ["GET", /^\/api\/access$/, async () => ({ roles: ACCESS_ROLES, users: readStore(ROOT, "access.json", { users: [] }).users ?? [] })],
+  ["PUT", /^\/api\/access$/, async (req) => {
+    const b = await json(req);
+    const { users, errors } = validateAccess(b.users);
+    if (errors.length) throw Object.assign(new Error(errors.join(" ")), { status: 400 });
+    writeStore(ROOT, "access.json", { users, updatedAt: new Date().toISOString() });
+    return { roles: ACCESS_ROLES, users };
+  }],
+  ["GET", /^\/api\/crm$/, async () => ({ platforms: CRM_PLATFORMS, platform: "salesforce", links: {}, ...readStore(ROOT, "crm.json", {}) })],
+  ["PUT", /^\/api\/crm$/, async (req) => {
+    const b = await json(req);
+    if (!CRM_PLATFORMS.includes(b.platform)) throw Object.assign(new Error(`Choose one of: ${CRM_PLATFORMS.join(", ")}`), { status: 400 });
+    const cur = readStore(ROOT, "crm.json", { links: {} });
+    writeStore(ROOT, "crm.json", { ...cur, platform: b.platform });
+    return { ...cur, platform: b.platform };
+  }],
+  ["PUT", /^\/api\/crm\/links\/([\w-]+)$/, async (req, u, [id]) => {
+    const b = await json(req);
+    const err = validCrmLink(b);
+    if (err) throw Object.assign(new Error(err), { status: 400 });
+    const cur = readStore(ROOT, "crm.json", { links: {} });
+    cur.links = { ...(cur.links ?? {}), [id]: { platform: b.platform, recordId: b.recordId, url: b.url || null, linkedAt: new Date().toISOString() } };
+    writeStore(ROOT, "crm.json", cur);
+    return cur.links[id];
+  }],
+  ["DELETE", /^\/api\/crm\/links\/([\w-]+)$/, async (req, u, [id]) => {
+    const cur = readStore(ROOT, "crm.json", { links: {} });
+    if (cur.links?.[id]) { delete cur.links[id]; writeStore(ROOT, "crm.json", cur); }
+    return {};
+  }],
   // The full solicitation text the sweep read for a finding (notice + public documents).
   ["GET", /^\/api\/findings\/([\w-]+)\/text$/, async (req, u, [id]) => {
     const text = readText(ROOT, id);

@@ -121,6 +121,7 @@ async function loadMeta() {
   state.tenant = state.meta.tenants.some((t) => t.id === saved) ? saved : state.meta.tenants[0]?.id;
   sel.value = state.tenant;
   $("#me").value = store.get("rfp.me", "");
+  await loadPrincipal();
   const fs = $("#fStatus");
   for (const s of state.meta.statuses) fs.append(h("option", { value: s }, s));
   onTenant();
@@ -148,6 +149,7 @@ async function loadLedger() {
 function render() {
   if (state.tab === "sweep") return renderSweepResults();
   if (state.tab === "analyze") return;
+  if (state.tab === "config") return renderConfig();
   renderKpis();
   if (state.tab === "findings") renderFindings();
   if (state.tab === "actions") renderActions();
@@ -889,6 +891,148 @@ function renderCompany() {
     editing ? h("div", { class: "row" }, h("label", {}, "Name ", nm), h("button", { class: "primary", onclick: async () => { p.keywords = kw.value.split(",").map((x) => x.trim()).filter(Boolean); p.name = nm.value.trim() || p.name; state.profileEditing = false; await rerender(); toast("Profile saved. Every RFP is re-scored against it."); } }, "Save profile")) : null);
 }
 
+
+// =================================================================== Configuration
+// Who can open the private host (work email + one of the four roles, no names), and
+// the sales-platform link through MCP. Edited in the local dashboard; both files stay
+// on this machine (store/access.json, store/crm.json) and are never published.
+
+const ROLE_BY_SLUG = { rfp_rfp_manager: "RFP Manager", rfp_pre_sales_consultant: "Pre-sales Consultant", rfp_account_executive: "Account Executive", rfp_sme_contributor: "SME Contributor" };
+
+/** On the private host, who is signed in (Microsoft sign-in) and their role from the access list. */
+async function loadPrincipal() {
+  if (!STATIC) return;
+  try {
+    const r = await fetch("/.auth/me", { cache: "no-store" });
+    if (!r.ok || !(r.headers.get("content-type") ?? "").includes("json")) return;
+    const p = (await r.json())?.clientPrincipal;
+    if (!p) return;
+    const role = (p.userRoles ?? []).map((x) => ROLE_BY_SLUG[x]).find(Boolean) ?? null;
+    state.principal = { email: p.userDetails, role };
+    if (role && !$("#me").value) $("#me").value = role;
+  } catch { /* the public copy has no sign-in */ }
+}
+
+async function renderConfig() {
+  const box = $("#configBody");
+  if (!box) return;
+  if (STATIC) {
+    const who = state.principal;
+    return box.replaceChildren(h("section", { class: "card config-card" },
+      h("h2", {}, "Configuration"),
+      who ? h("p", {}, `Signed in as ${who.email}${who.role ? `, ${who.role}` : ""}. `, h("a", { href: "/.auth/logout" }, "Sign out")) : h("p", {}, "This is the public copy: it has no sign-in and shows only public procurement data."),
+      h("p", {}, "Users, their roles and the sales-platform link are managed by an admin in the local dashboard (npm run dashboard → Configuration). The private host, with company sign-in, lets in only the work emails on that list."),
+      h("p", { class: "hint" }, "Set-up steps: docs/private-hosting.md and docs/sales-platform-mcp.md in the repository.")));
+  }
+  if (!box.firstChild) box.replaceChildren(h("p", { class: "hint" }, "Loading the configuration…"));
+  let access, crm;
+  try { [access, crm] = await Promise.all([fetch("/api/access").then((r) => r.json()), fetch("/api/crm").then((r) => r.json())]); }
+  catch (e) { return box.replaceChildren(h("p", { class: "empty" }, `Could not load the configuration: ${e.message}`)); }
+  state.crm = crm;
+  if (!state.accessDraft) state.accessDraft = access.users.map((u) => ({ ...u }));
+  const draft = state.accessDraft, roles = access.roles;
+  const roleSelect = (value, onchange, label) => h("select", { class: "keep", "aria-label": label, onchange: (e) => onchange(e.target.value) }, ...roles.map((r) => h("option", { value: r, selected: r === value }, r)));
+  const newEmail = h("input", { type: "email", id: "cfgEmail", placeholder: "work email", "aria-label": "Work email", autocomplete: "off" });
+  let newRole = roles[0];
+  const addUser = () => {
+    const email = newEmail.value.trim();
+    if (!email) return toast("Enter a work email first.", true);
+    draft.push({ email, role: newRole, admin: false });
+    renderConfig();
+    toast(`${email} added as ${newRole}. Press Save to keep it.`);
+  };
+  newEmail.addEventListener("keydown", (e) => { if (e.key === "Enter") addUser(); });
+  const saveAccess = async () => {
+    try {
+      const r = await fetch("/api/access", { method: "PUT", headers: { "X-RFP-Dashboard": "1", "content-type": "application/json" }, body: JSON.stringify({ users: draft }) });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error);
+      state.accessDraft = j.users.map((u) => ({ ...u }));
+      renderConfig();
+      toast(`Access list saved: ${j.users.length} user(s). Apply it to the private host with npm run access:apply.`);
+    } catch (e) { toast(e.message, true); }
+  };
+  const platform = crm.platform ?? "salesforce", pname = R().CRM_NAMES[platform];
+  const links = Object.entries(crm.links ?? {});
+  const titleOf = (id) => state.allLedger?.findings.find((f) => f.id === id)?.title ?? id;
+  box.replaceChildren(
+    h("section", { class: "card config-card", id: "cfgAccess" },
+      h("h2", {}, "Users and access"),
+      h("p", { class: "hint" }, "Who can open the dashboard on the private host, with company (Microsoft) sign-in. Work email and one of the four roles only, no names. Saved in store/access.json on this machine: not in git, never published."),
+      h("div", { class: "tablewrap" }, h("table", { class: "grid access-table" },
+        h("thead", {}, h("tr", {}, ...["Work email", "Role", "Admin", ""].map((x) => h("th", {}, x)))),
+        h("tbody", {}, ...(draft.length ? draft.map((u, i) => h("tr", {},
+          h("td", {}, (() => { const inp = h("input", { type: "email", class: "keep", value: u.email, "aria-label": "Work email" }); inp.addEventListener("change", () => { u.email = inp.value.trim(); }); return inp; })()),
+          h("td", {}, roleSelect(u.role, (v) => { u.role = v; }, "Role")),
+          h("td", {}, h("input", { type: "checkbox", class: "keep", checked: !!u.admin, "aria-label": "Admin", onchange: (e) => { u.admin = e.target.checked; } })),
+          h("td", {}, h("button", { class: "keep link", "aria-label": `Remove ${u.email}`, onclick: () => { draft.splice(i, 1); renderConfig(); toast(`${u.email} removed. Press Save to keep the change.`); } }, "Remove"))))
+          : [h("tr", {}, h("td", { colspan: 4, class: "empty" }, "No users yet. Add the work emails of the people who should see the dashboard."))])))),
+      h("div", { class: "row add-user" }, newEmail, roleSelect(newRole, (v) => { newRole = v; }, "Role for the new user"), h("button", { class: "keep", id: "cfgAdd", onclick: addUser }, "Add user"), h("button", { class: "primary", id: "cfgSave", onclick: saveAccess }, "Save access list")),
+      h("h4", {}, "Apply it to the private host"),
+      h("pre", { class: "cmd" }, "npm run access:apply -- --name <static-web-app> --resource-group <resource-group>"),
+      h("p", { class: "hint" }, "Uses your own Azure CLI sign-in (az login) to set the host's RFP_ACCESS app setting. Everyone else who signs in sees a no-access page.")),
+    h("section", { class: "card config-card" },
+      h("h2", {}, "Private host (company sign-in)"),
+      h("ol", { class: "steps" },
+        h("li", {}, "Create an Azure Static Web App (Standard plan, for custom roles) and a Microsoft Entra app registration for sign-in."),
+        h("li", {}, "In GitHub: add the secret AZURE_STATIC_WEB_APPS_API_TOKEN and the variable AAD_TENANT_ID. Every build then also deploys to the private host."),
+        h("li", {}, "On the Static Web App: set AAD_CLIENT_ID and AAD_CLIENT_SECRET, then apply the access list (above)."),
+        h("li", {}, "When the private host works, set the GitHub variable PUBLISH_PAGES to false to stop the public copy.")),
+      h("p", { class: "hint" }, "Full steps: docs/private-hosting.md. Creating the Azure and Entra resources needs your accounts, so this tool never does it for you.")),
+    h("section", { class: "card config-card", id: "cfgCrm" },
+      h("h2", {}, "Sales platform (MCP)"),
+      h("div", { class: "row" }, h("label", {}, "Platform ", h("select", { id: "cfgPlatform", class: "keep", onchange: async (e) => {
+        try { const r = await fetch("/api/crm", { method: "PUT", headers: { "X-RFP-Dashboard": "1", "content-type": "application/json" }, body: JSON.stringify({ platform: e.target.value }) }); const j = await r.json(); if (!r.ok) throw new Error(j.error); state.crm = { ...state.crm, platform: j.platform }; toast(`Sales platform: ${R().CRM_NAMES[j.platform]}`); renderConfig(); } catch (err) { toast(err.message, true); }
+      } }, ...R().CRM_PLATFORMS.map((p) => h("option", { value: p, selected: p === platform }, R().CRM_NAMES[p]))))),
+      h("ol", { class: "steps" },
+        h("li", {}, "Claude Code opened in this folder loads the rfp-sweeper MCP server from .mcp.json (or add it to Claude: command node, argument scripts/mcp-server.mjs)."),
+        h("li", {}, `Connect your ${pname} connector in Claude.`),
+        h("li", {}, `Ask Claude, e.g. "Create a ${pname} opportunity for the best-fit RFP closing this month". It prepares the fields; you confirm; your ${pname} connector creates the record; the link is recorded here.`)),
+      h("p", { class: "hint" }, `Nothing is created in ${pname} without your confirmation, and this tool never calls ${pname} itself. Links stay in store/crm.json on this machine and never appear on a published page.`),
+      h("h4", {}, `Linked records (${links.length})`),
+      links.length ? h("div", { class: "tablewrap" }, h("table", { class: "grid" }, h("thead", {}, h("tr", {}, ...["Opportunity", "Platform", "Record", "Linked", ""].map((x) => h("th", {}, x)))),
+        h("tbody", {}, ...links.map(([id, l]) => h("tr", {}, h("td", {}, titleOf(id)), h("td", {}, R().CRM_NAMES[l.platform] ?? l.platform), h("td", {}, l.url ? h("a", { href: l.url, target: "_blank", rel: "noopener noreferrer" }, l.recordId) : l.recordId), h("td", {}, String(l.linkedAt ?? "").slice(0, 10)),
+          h("td", {}, h("button", { class: "keep link", onclick: () => unlinkCrm(id) }, "Unlink")))))))
+        : h("p", { class: "empty" }, "None yet.")));
+}
+
+async function unlinkCrm(id, ws) {
+  try {
+    const r = await fetch(`/api/crm/links/${encodeURIComponent(id)}`, { method: "DELETE", headers: { "X-RFP-Dashboard": "1" } });
+    if (!r.ok) throw new Error((await r.json()).error);
+    if (state.crm?.links) delete state.crm.links[id];
+    toast("Link removed. The record in the sales platform is not touched.");
+    if (ws) renderWorkspace(ws); else renderConfig();
+  } catch (e) { toast(e.message, true); }
+}
+
+/** Local workspace: the RFP's fields for the sales platform, and its linked record if any. */
+function crmPanel(ws) {
+  const f = ws.finding, crm = state.crm ?? { platform: "salesforce", links: {} };
+  const platform = crm.platform ?? "salesforce", pname = R().CRM_NAMES[platform];
+  const link = crm.links?.[f.id];
+  const payload = R().crmPayload(f, platform, { profile: state.profile });
+  const fields = payload.fields ?? payload.properties ?? {};
+  const recordId = h("input", { class: "keep", id: "crmRecordId", placeholder: `${pname} record id`, "aria-label": `${pname} record id` });
+  const url = h("input", { class: "keep", id: "crmUrl", type: "url", placeholder: `link to the record (https://…)`, "aria-label": `${pname} link` });
+  return h("div", { class: "card crm-panel" },
+    h("div", { class: "explain-head" }, h("h3", {}, `${pname} opportunity`), h("button", { class: "keep link", onclick: () => { ws.crmOpen = false; renderWorkspace(ws); } }, "Close")),
+    link ? h("p", { class: "notice ok-note" }, `Linked to ${pname} record `, link.url ? h("a", { href: link.url, target: "_blank", rel: "noopener noreferrer" }, link.recordId) : link.recordId, ` on ${String(link.linkedAt ?? "").slice(0, 10)}. `, h("button", { class: "keep link", onclick: () => unlinkCrm(f.id, ws) }, "Unlink")) : null,
+    h("p", {}, `Ask Claude: "Create a ${pname} opportunity for RFP ${f.id}". It uses the rfp-sweeper MCP server and your ${pname} connector, shows you these fields and creates nothing until you confirm.`),
+    h("table", { class: "facts" }, h("tbody", {}, ...Object.entries(fields).filter(([, v]) => v != null && v !== "").map(([k, v]) => h("tr", {}, h("th", {}, k), h("td", { class: "crm-value" }, String(v)))))),
+    (payload.decide ?? []).length ? h("ul", { class: "plain hint" }, ...payload.decide.map((d) => h("li", {}, d))) : null,
+    link ? null : h("div", { class: "row" }, h("span", { class: "hint" }, "Created it already? Link it:"), recordId, url, h("button", { class: "keep", onclick: async () => {
+      try {
+        const r = await fetch(`/api/crm/links/${encodeURIComponent(f.id)}`, { method: "PUT", headers: { "X-RFP-Dashboard": "1", "content-type": "application/json" }, body: JSON.stringify({ platform, recordId: recordId.value.trim(), url: url.value.trim() || undefined }) });
+        const j = await r.json();
+        if (!r.ok) throw new Error(j.error);
+        state.crm = { ...crm, links: { ...(crm.links ?? {}), [f.id]: j } };
+        toast(`Linked to ${pname} record ${j.recordId}`);
+        renderWorkspace(ws);
+      } catch (e) { toast(e.message, true); }
+    } }, "Link record")));
+}
+
 // =================================================================== Workspace
 // Qualify → Assign → Analyze RFP → Draft response → Proofread → RFP submission status, for one opportunity.
 
@@ -1111,7 +1255,9 @@ function renderWorkspace(ws) {
       h("div", { class: "ws-actions" },
         h("button", { class: "keep", onclick: () => exportScoring(ws), disabled: !a }, "Export scoring file (.xlsx)"),
         h("button", { class: "keep", onclick: () => downloadText(`${slug(ws.title)}-proposal-draft.md`, ws.proposal ?? ""), disabled: !ws.proposal }, "Download proposal (.md)"),
+        !STATIC && f && !f.raw ? h("button", { class: `keep ${state.crm?.links?.[f.id] ? "linked" : ""}`, id: "crmOpen", onclick: async () => { if (!state.crm) { try { state.crm = await fetch("/api/crm").then((r) => r.json()); } catch { state.crm = { platform: "salesforce", links: {} }; } } ws.crmOpen = !ws.crmOpen; renderWorkspace(ws); } }, `${R().CRM_NAMES[state.crm?.platform ?? "salesforce"]}${state.crm?.links?.[f.id] ? " ✓" : "…"}`) : null,
         h("button", { class: "keep", onclick: () => { if (box.classList.contains("ws-overlay")) hideOverlay(ws.target); else box.replaceChildren(); if (ws === state.ws) { state.ws = null; renderSweepResults(); } } }, "Close ✕"))),
+    ws.crmOpen && !STATIC && f ? crmPanel(ws) : null,
     h("ol", { class: "stepper" }, ...STEPS.map(([k, label], i) => h("li", { class: done[k] ? "done" : "" }, h("button", { class: "keep", onclick: act[k] }, h("span", { class: "n" }, done[k] ? "✓" : i + 1), label)))),
     ws.finding && !ws.documentName && (!ws.text || ws.text.split(/\s+/).length < 400) ? uploadPrompt(ws) : null,
     f?.raw ? h("div", { class: "notice raw-note" }, "The sweep saw this posting, but no industry pack kept it, so it is not in the pipeline yet.",

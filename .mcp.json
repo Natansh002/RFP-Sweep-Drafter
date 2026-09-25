@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "rfp-sweeper": {
+      "command": "node",
+      "args": ["scripts/mcp-server.mjs"]
+    }
+  }
+}

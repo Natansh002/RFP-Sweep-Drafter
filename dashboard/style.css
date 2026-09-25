@@ -343,3 +343,17 @@ button.decision.on.nogo { background: var(--danger-bg); color: var(--danger); bo
 .checklist .tick { display: inline-block; width: 1.2em; font-weight: 700; }
 .checklist li.ok .tick { color: var(--pursue); }
 .checklist li.no .tick { color: var(--danger); }
+
+/* Configuration and the sales-platform panel */
+.intro { margin: 4px 0 8px; max-width: 95ch; }
+.config-card .steps { margin: 8px 0; padding-left: 20px; }
+.config-card .steps li { margin: 4px 0; }
+.access-table input[type=email] { width: 100%; min-width: 220px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; min-height: 32px; }
+.add-user { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
+.add-user input[type=email] { flex: 1 1 240px; min-width: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; min-height: 32px; }
+pre.cmd { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; overflow-x: auto; font-size: 12.5px; }
+.crm-panel .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.crm-panel .row input { flex: 1 1 200px; min-width: 0; }
+.crm-value { white-space: pre-wrap; word-break: break-word; font-size: 12.5px; }
+button.linked { border-color: var(--pursue); color: var(--pursue); }
+.no-access { max-width: 640px; margin: 64px auto; }

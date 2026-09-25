@@ -115,6 +115,7 @@ const results = [];
 async function check(name, fn) {
   try { await fn(); results.push([true, name]); }
   catch (e) { results.push([false, `${name} — ${String(e.message).split("\n")[0].slice(0, 200)}`]); }
+  if (process.env.E2E_VERBOSE) console.log(`${results.at(-1)[0] ? "  ✓" : "  ✗"} ${results.at(-1)[1]}`);
 }
 const expect = (cond, msg) => { if (!cond) throw new Error(msg); };
 
@@ -165,8 +166,8 @@ async function suite(mode, url) {
 
   await check(P("loads with the workflow strip and 7 steps"), async () => expect((await page.locator("#flowSteps li").count()) === 7, "flow steps missing"));
   await check(P("every main tab opens its screen"), async () => {
-    for (const t of ["analyze", "findings", "actions", "sweep"]) { await tab(page, t); expect(await page.locator(`#tab-${t}`).isVisible(), `tab ${t} not visible`); }
-    expect((await page.locator(".main-tabs button").allTextContents()).join("|") === "RFP Sweep|Analyze a document|Pipeline|Action items", "the main tabs are not exactly RFP Sweep, Analyze a document, Pipeline, Action items");
+    for (const t of ["analyze", "findings", "actions", "config", "sweep"]) { await tab(page, t); expect(await page.locator(`#tab-${t}`).isVisible(), `tab ${t} not visible`); }
+    expect((await page.locator(".main-tabs button").allTextContents()).join("|") === "RFP Sweep|Analyze a document|Pipeline|Action items|Configuration", "the main tabs are not exactly RFP Sweep, Analyze a document, Pipeline, Action items, Configuration");
   });
   await check(P("sweep form filters are populated"), async () => {
     for (const [id, min] of [["#sIndustry", 8], ["#sGeo", 3], ["#sCap", 8], ["#sDays", 4], ["#sStatus", 4]]) expect((await page.locator(`${id} option`).count()) >= min, `${id} has too few options`);
@@ -430,6 +431,17 @@ async function suite(mode, url) {
       const i = await download(page, () => page.click("#exportIcs")); expect(fs.readFileSync(i, "utf8").startsWith("BEGIN:VCALENDAR"), "ics");
     });
   }
+  if (isStatic) {
+    await check(P("Configuration on the published site: public copy, users are managed locally, no sales-platform panel"), async () => {
+      await tab(page, "config"); await page.waitForTimeout(300);
+      const t = await page.locator("#tab-config").textContent();
+      expect(/public copy/.test(t) && /local dashboard/.test(t), "no explanation");
+      expect(await page.locator("#cfgEmail").count() === 0, "user editing shown on the published site");
+      await tab(page, "sweep"); await openFirst();
+      expect(await page.locator("#crmOpen").count() === 0, "sales-platform button on the published site");
+      await page.keyboard.press("Escape");
+    });
+  }
   await check(P("Action items tab and its filters"), async () => {
     await tab(page, "actions"); await page.waitForTimeout(200);
     expect((await page.locator("#actions tbody tr").count()) >= 1, "no action items");
@@ -498,6 +510,48 @@ async function suite(mode, url) {
       await tab(page, "analyze"); await page.fill("#aRfpText", RFP); await page.click("#aRun"); await page.waitForSelector("#aWorkspace .workspace");
       await page.locator("#aWorkspace button", { hasText: "Add to pipeline" }).click(); await page.waitForTimeout(700);
       await seenToast(page, /Added to the pipeline/);
+    });
+    await check(P("configuration: a bad email is refused visibly; a user is added, saved and survives a reload; removal too"), async () => {
+      await tab(page, "config"); await page.waitForTimeout(400);
+      await page.fill("#cfgEmail", "not-an-email"); await page.click("#cfgAdd");
+      await seenToast(page, /added as RFP Manager/);
+      await page.click("#cfgSave");
+      await seenToast(page, /not an email address/);
+      await page.locator("#cfgAccess button", { hasText: "Remove" }).first().click();
+      await seenToast(page, /removed/);
+      await page.fill("#cfgEmail", "rfp.lead@example.org");
+      await page.locator("#cfgAccess .add-user select").selectOption("Account Executive");
+      await page.click("#cfgAdd"); await seenToast(page, /added as Account Executive/);
+      await page.click("#cfgSave"); await seenToast(page, /Access list saved: 1 user/);
+      const saved = JSON.parse(fs.readFileSync(path.join(STORE, "access.json"), "utf8"));
+      expect(saved.users.length === 1 && saved.users[0].email === "rfp.lead@example.org" && saved.users[0].role === "Account Executive" && !("name" in saved.users[0]), "not saved as email + role");
+      await page.reload(); await page.waitForSelector("#sRun"); await tab(page, "config"); await page.waitForTimeout(400);
+      expect(await page.locator('#cfgAccess tbody input[type="email"]').inputValue() === "rfp.lead@example.org", "user gone after reload");
+    });
+    await check(P("configuration: the sales platform choice is saved"), async () => {
+      await page.selectOption("#cfgPlatform", "hubspot"); await seenToast(page, /Sales platform: HubSpot/);
+      expect(JSON.parse(fs.readFileSync(path.join(STORE, "crm.json"), "utf8")).platform === "hubspot", "platform not saved");
+      await page.selectOption("#cfgPlatform", "salesforce"); await seenToast(page, /Sales platform: Salesforce/);
+    });
+    await check(P("workspace: Salesforce panel prepares the fields, refuses a foreign link, links and unlinks a record"), async () => {
+      await tab(page, "sweep"); await page.waitForTimeout(300);
+      await page.selectOption("#sStatus", "active"); await page.dispatchEvent("#sStatus", "change"); await page.waitForTimeout(200);
+      await openFirst();
+      await page.click("#crmOpen"); await page.waitForTimeout(300);
+      const panel = await page.locator("#sWorkspace .crm-panel").textContent();
+      expect(/Salesforce opportunity/.test(panel) && /RFP: Enterprise Resource Planning \(ERP\)/.test(panel) && /creates nothing until you confirm/.test(panel), "fields not prepared");
+      await page.fill("#crmRecordId", "006Hs00001AbCdEIAV"); await page.fill("#crmUrl", "https://evil.example/006");
+      await page.locator("#sWorkspace .crm-panel button", { hasText: "Link record" }).click();
+      await seenToast(page, /not on Salesforce/);
+      await page.fill("#crmUrl", "https://acme.lightning.force.com/lightning/r/Opportunity/006Hs00001AbCdEIAV/view");
+      await page.locator("#sWorkspace .crm-panel button", { hasText: "Link record" }).click();
+      await seenToast(page, /Linked to Salesforce record 006Hs00001AbCdEIAV/);
+      expect(/Linked to Salesforce record/.test(await page.locator("#sWorkspace .crm-panel").textContent()), "link not shown");
+      const ledgerText = fs.readFileSync(path.join(STORE, "all.json"), "utf8");
+      expect(!ledgerText.includes("force.com"), "the Salesforce link leaked into the ledger");
+      await page.locator("#sWorkspace .crm-panel button", { hasText: "Unlink" }).click();
+      await seenToast(page, /Link removed/);
+      await page.keyboard.press("Escape");
     });
     await check(P("security: writes without the dashboard header are refused"), async () => {
       const r = await page.evaluate(async () => (await fetch("/api/findings/x?tenant=all", { method: "PATCH", body: "{}" })).status);
@@ -572,7 +626,7 @@ Built on Microsoft Dynamics 365 Business Central with Power BI reporting.`;
   });
 
   await check(P("no stray \"null\" or \"undefined\" text on any screen"), async () => {
-    for (const t of ["sweep", "analyze", "findings", "actions"]) {
+    for (const t of ["sweep", "analyze", "findings", "actions", "config"]) {
       await tab(page, t); await page.waitForTimeout(150);
       const text = await page.locator(`#tab-${t}`).innerText();
       expect(!/(^|\s)(null|undefined|NaN|\[object Object\])(\s|$)/.test(text), `${t} screen shows a stray value`);

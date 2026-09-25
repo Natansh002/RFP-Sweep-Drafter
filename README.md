@@ -56,6 +56,19 @@ finished review into reusable answers that stay on your machine.
 model, and every output says so. It is deterministic, explains each score, and
 never fabricates a reference, certification, capability or metric.
 
+## Configuration
+
+The **Configuration** tab (local dashboard) holds two things:
+
+- **Users and access.** Work email plus one of the four roles. No names are stored. On the **private host**
+  (Azure Static Web Apps with Microsoft sign-in), only those emails get in; everyone else sees a
+  no-access page. Set-up: [docs/private-hosting.md](docs/private-hosting.md). Once it works, set the
+  repository variable `PUBLISH_PAGES=false` to retire the public copy.
+- **Sales platform (MCP).** `npm run mcp` runs RFP Sweep as an MCP server (registered in `.mcp.json`).
+  Claude, with your Salesforce, HubSpot or Dynamics 365 connector, can list the best-fit RFPs, prepare
+  the opportunity fields and, **after you confirm**, create the record and link it back. Links stay in
+  `store/crm.json` on your machine. Details: [docs/sales-platform-mcp.md](docs/sales-platform-mcp.md).
+
 ## Quick start
 
 ```bash

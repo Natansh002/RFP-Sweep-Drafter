@@ -1,0 +1,6 @@
+{
+  "name": "rfp-sweep-drafter-api",
+  "private": true,
+  "description": "Private host API (Azure Static Web Apps): turns the access list into roles. No dependencies.",
+  "main": "roles/index.js"
+}

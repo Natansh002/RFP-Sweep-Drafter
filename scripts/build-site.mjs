@@ -19,6 +19,7 @@ import { buildCalendar } from "../lib/ics.mjs";
 import { findBlocked } from "../lib/guard.mjs";
 import { browserBundle, VENDOR } from "../lib/bundle.mjs";
 import { sharedMeta } from "../lib/meta.mjs";
+import { hostConfig } from "../lib/access.mjs";
 
 const OUT = path.join(ROOT, "site");
 fs.rmSync(OUT, { recursive: true, force: true });
@@ -75,5 +76,16 @@ fs.writeFileSync(path.join(OUT, "rfp-bundle.js"), browserBundle());
 fs.mkdirSync(path.join(OUT, "vendor"), { recursive: true });
 for (const [name, src] of Object.entries(VENDOR)) fs.copyFileSync(path.join(ROOT, src), path.join(OUT, "vendor", name));
 fs.writeFileSync(path.join(OUT, ".nojekyll"), "");
+
+// Private host (Azure Static Web Apps; GitHub Pages ignores both files): sign in with
+// Microsoft, then only emails on the access list get in (docs/private-hosting.md).
+fs.writeFileSync(path.join(OUT, "staticwebapp.config.json"), JSON.stringify(hostConfig({ tenantId: process.env.AAD_TENANT_ID || null }), null, 2));
+fs.writeFileSync(path.join(OUT, "no-access.html"), `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="${CSP}"><title>No access · RFP Sweep</title><link rel="stylesheet" href="style.css?v=${V}"></head>
+<body><main class="card no-access"><h1>You are signed in, but not on the access list</h1>
+<p>This RFP dashboard is open only to the work emails an admin has added in Configuration. Ask your RFP Manager to add you with your role.</p>
+<p><a href="/.auth/logout">Sign out</a></p></main></body></html>
+`);
 
 console.log(`site/ built: ${tenants.map((t) => `${t.id} (${t.findings})`).join(", ")}`);
