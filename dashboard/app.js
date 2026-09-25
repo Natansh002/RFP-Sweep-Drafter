@@ -661,7 +661,15 @@ function renderSweepResults() {
     list = narrowed;
   }
   const high = list.filter((f) => f.band === "pursue").length, review = list.filter((f) => f.band === "review").length;
+  // A narrower geography hides matches elsewhere: say how many, with one click to show them.
+  let geoNote = null;
+  if (p.geography && p.geography !== "na" && !state.flowFilter) {
+    const wider = clientFilter(state.allLedger.findings, { ...p, geography: "na" }).length - clientFilter(state.allLedger.findings, p).length;
+    const label = state.meta.geographies.find((g) => g.id === p.geography)?.label ?? p.geography;
+    if (wider > 0) geoNote = h("div", { class: "flow-note geo-note" }, h("span", {}, `${wider} more ${wider === 1 ? "match" : "matches"} outside ${label}.`), h("button", { class: "keep link", onclick: () => { $("#sGeo").value = "na"; state.sweepIds = null; renderSweepResults(); } }, "Show North America"));
+  }
   box.replaceChildren(
+    ...(geoNote ? [geoNote] : []),
     ...(flowNote ? [flowNote] : []), // replaceChildren prints a null as the text "null"
     h("div", { class: "results-head" },
       h("h2", {}, `${list.length} ${list.length === 1 ? "opportunity" : "opportunities"} found`),

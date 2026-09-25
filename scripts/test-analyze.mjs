@@ -186,7 +186,18 @@ a("never skip: housing finance agency leaving Dynamics GP", keep({ title: "RFP f
 a("never skip: Dynamics GP migration in the title", keep({ title: "Dynamics GP Migration Services", buyer: "A Foundation", country: "US", closeDate: "2026-12-01" }, "nonprofit"));
 a("sector: library and housing corporation are nonprofit / public-benefit", classifySector({ buyer: "Toronto Public Library" }).id === "nonprofit" && classifySector({ buyer: "Kentucky Housing Corporation" }).id === "nonprofit");
 a("capability: SchoolDay space recognised", matchCapabilities("Cashless Transaction Management Solution").some((m) => m.id === "payments"));
-a("watch list: KHC procurement page swept every run", JSON.parse(fs.readFileSync(new URL("../data/nonprofit-watch.json", import.meta.url), "utf8")).entries.some((e) => /kyhousing\.org/.test(e.procurementUrl)) && loadPack("nonprofit").directSites.alwaysSweep);
+a("watch list: KHC swept every run from its Bonfire feed", JSON.parse(fs.readFileSync(new URL("../data/nonprofit-watch.json", import.meta.url), "utf8")).entries.some((e) => /kyhousing\.bonfirehub\.com\/PublicPortal/.test(e.procurementUrl) && e.format === "bonfire-json") && loadPack("nonprofit").directSites.alwaysSweep);
+{
+  // Card-style links on buyers' own sites (KHC's page lists bids this way; the old 220-character limit skipped them).
+  const card = `<div class="news_content"><a href="https://kyhousing.bonfirehub.com/opportunities/236358" target="_blank" rel="noopener noreferrer"><div class="newsinfo"><div class="newsBody"><h3>Enterprise Resource Planning System</h3><p class="h6"> Posted <time datetime="2026-08-17T14:00:00-04:00" title="2:00 pm EDT Monday, August 17, 2026">August 17, 2026</time></p><span class="date"> Project closes Oct 16, 2026 5:00 PM EDT. </span></div></div></a></div>`;
+  const cx = extractPostings({ id: "direct:kyhousing.org", url: "https://www.kyhousing.org/page/procurement", buyer: "Kentucky Housing Corporation", country: "US", render: "server" }, `<html><body>${"<p>pad</p>".repeat(60)}${card}</body></html>`);
+  a("never skip: card-style bid links read with heading title and dates", cx.postings.length === 1 && cx.postings[0].title === "Enterprise Resource Planning System" && cx.postings[0].closeDate === "2026-10-16" && cx.postings[0].publishedDate === "2026-08-17");
+  const kf = extractPostings({ id: "direct:kyhousing.bonfirehub.com", format: "bonfire-json", url: "https://kyhousing.bonfirehub.com/PublicPortal/getOpenPublicOpportunitiesSectionData", portalUrl: "https://kyhousing.bonfirehub.com/portal/?tab=openOpportunities", buyer: "Kentucky Housing Corporation", country: "US" },
+    { payload: { projects: { 1: { ProjectID: 236358, ReferenceID: "2023 - 055", ProjectName: "Enterprise Resource Planning System", DateClose: "2026-10-16 21:00:00" } } } });
+  const all = loadTenant("all");
+  const kband = score({ ...kf.postings[0], buyerType: "housing finance agency" }, effectivePack(loadPack("nonprofit"), all), all).band;
+  a("never skip: KHC's ERP RFP from its Bonfire feed is kept for nonprofit", kf.postings[0].url === "https://kyhousing.bonfirehub.com/opportunities/236358" && kf.postings[0].closeDate === "2026-10-16" && ["pursue", "review"].includes(kband) && buyerMatches(kf.postings[0], loadPack("nonprofit")));
+}
 
 // ------------------------------------------------------------------ response writer skill (synthetic data only)
 {

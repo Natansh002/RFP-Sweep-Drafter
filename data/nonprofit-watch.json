@@ -5,14 +5,17 @@
   "entries": [
     {
       "name": "Kentucky Housing Corporation",
-      "domain": "kyhousing.org",
-      "procurementUrl": "https://www.kyhousing.org/page/procurement",
-      "platform": "own website",
-      "browser": true,
+      "domain": "kyhousing.bonfirehub.com",
+      "procurementUrl": "https://kyhousing.bonfirehub.com/PublicPortal/getOpenPublicOpportunitiesSectionData",
+      "platform": "Euna Procurement (Bonfire), linked from its own website",
+      "browser": false,
       "country": "United States",
       "segment": "nonprofit",
-      "source": "state housing finance agency's own procurement page, confirmed live",
-      "verified": "2026-09-25"
+      "source": "KHC's Bonfire portal public feed (linked from kyhousing.org/page/procurement), confirmed live",
+      "verified": "2026-09-25",
+      "portalUrl": "https://kyhousing.bonfirehub.com/portal/?tab=openOpportunities",
+      "website": "https://www.kyhousing.org/page/procurement",
+      "format": "bonfire-json"
     },
     {
       "name": "Toronto Public Library",
