@@ -414,3 +414,7 @@ th button.sort.on .arrow { color: var(--accent); }
 .chip-wrap { display: inline-flex; align-items: center; }
 .chip-x { padding: 0 4px; font-size: 16px; line-height: 1; }
 .pe-actions { display: flex; gap: 8px; margin-top: 14px; }
+.pe-status { margin: 6px 0 10px; }
+.pe-error { margin: 6px 0 10px; border-color: var(--danger); }
+.pe-updated { display: grid; gap: 6px; margin: 6px 0 10px; }
+.profile-editor.is-reading input, .profile-editor.is-reading textarea, .profile-editor.is-reading select { opacity: .6; }

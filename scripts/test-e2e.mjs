@@ -151,9 +151,10 @@ async function openPage(url) {
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
   // 403 and 400 come from the deliberate security probes (a write without the header, a private
   // address as the company website); server errors are caught by the response listener below.
-  page.on("console", (m) => { if (m.type() === "error" && !/favicon|404 \(Not Found\)|403 \(Forbidden\)|400 \(Bad Request\)|422 \(Unprocessable|429 \(Too Many Requests\)|500 \(Internal Server Error\)/.test(m.text())) errors.push(`console: ${m.text()}`); });
+  page.on("console", (m) => { if (m.type() === "error" && !/favicon|404 \(Not Found\)|403 \(Forbidden\)|400 \(Bad Request\)|422 \(Unprocessable|429 \(Too Many Requests\)|503 \(Service Unavailable\)|500 \(Internal Server Error\)/.test(m.text())) errors.push(`console: ${m.text()}`); });
   // A server error is always a failure; name the request so it can be fixed.
-  page.on("response", async (r) => { if (r.status() >= 500) errors.push(`HTTP ${r.status()} ${r.request().method()} ${new URL(r.url()).pathname}: ${(await r.text().catch(() => "")).slice(0, 160)}`); });
+  // (the faked reader service answers 503 on purpose; only this site's own server errors count)
+  page.on("response", async (r) => { if (r.status() >= 500 && new URL(r.url()).origin === new URL(url).origin) errors.push(`HTTP ${r.status()} ${r.request().method()} ${new URL(r.url()).pathname}: ${(await r.text().catch(() => "")).slice(0, 160)}`); });
   await page.goto(url);
   await page.waitForSelector("#sRun");
   await page.waitForTimeout(600);
@@ -161,18 +162,23 @@ async function openPage(url) {
 }
 const toastText = (page) => page.locator("#toast").textContent();
 /** The toast a person sees: shown, on top of everything at its centre (not under the workspace), saying this. */
-async function seenToast(page, re) {
-  await page.waitForTimeout(120);
-  const r = await page.evaluate(() => {
-    const t = document.getElementById("toast");
-    if (!t?.classList.contains("show")) return { shown: false, text: t?.textContent ?? "" };
-    const b = t.getBoundingClientRect();
-    const top = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
-    return { shown: true, onTop: !!top && (top === t || t.contains(top)), text: t.textContent };
-  });
+async function seenToast(page, re, timeoutMs = 8000) {
+  // Wait for this message (an earlier toast may still be showing), then check a person can see it.
+  let r = { shown: false, text: "" };
+  for (const end = Date.now() + timeoutMs; Date.now() < end;) {
+    await page.waitForTimeout(120);
+    r = await page.evaluate(() => {
+      const t = document.getElementById("toast");
+      if (!t?.classList.contains("show")) return { shown: false, text: t?.textContent ?? "" };
+      const b = t.getBoundingClientRect();
+      const top = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+      return { shown: true, onTop: !!top && (top === t || t.contains(top)), text: t.textContent };
+    });
+    if (r.shown && re.test(r.text)) break;
+  }
   expect(r.shown, `no toast shown (last text: "${r.text}")`);
-  expect(r.onTop, `the toast is hidden under another element: "${r.text}"`);
   expect(re.test(r.text), `toast says "${r.text}"`);
+  expect(r.onTop, `the toast is hidden under another element: "${r.text}"`);
 }
 async function download(page, action) {
   const [d] = await Promise.all([page.waitForEvent("download", { timeout: 10000 }), action()]);
@@ -764,16 +770,18 @@ Built on Microsoft Dynamics 365 Business Central with Power BI reporting.`;
   if (isStatic) await page.route("https://r.jina.ai/**", (route) => {
     const cors = { "access-control-allow-origin": "*", "access-control-allow-headers": "x-with-links-summary", "content-type": "text/plain" };
     if (route.request().method() === "OPTIONS") return route.fulfill({ status: 204, headers: cors });
-    if (readerMode === "down") return route.fulfill({ status: 429, headers: cors, body: "busy" });
+    if (readerMode === "down") return route.fulfill({ status: 503, headers: cors, body: "down" });
+    if (readerMode === "busy-once") { readerMode = "up"; return route.fulfill({ status: 429, headers: cors, body: "busy" }); }
     const u = route.request().url();
     return route.fulfill({ status: 200, headers: cors, body: /merx\.com\/public\/solicitations/.test(u) ? MERX_HTML : /sam\.gov\/api/.test(u) ? SAM_JSON : /payroll-hr/.test(u) ? READER_PAYROLL : READER_HOME });
   });
+  if (isStatic) await page.evaluate(() => { sessionStorage.setItem("rfp.readerRetryMs", "50"); sessionStorage.setItem("rfp.readerPerMinute", "1000"); readerRetryMs = 50; readerPerMinute = 1000; });
   await check(P("company: a website that cannot be read falls back to paste / upload, visibly"), async () => {
     await tab(page, "sweep"); await page.waitForTimeout(150);
     if (isStatic) expect(/r\.jina\.ai, a public reader service: only the website's address is sent/.test(await page.locator("#companyCard").textContent()), "the reader is not disclosed");
     await page.fill("#pUrl", isStatic ? "www.harborline.example" : "http://127.0.0.1:4190/");
     await page.click("#pBuild"); await page.waitForTimeout(isStatic ? 600 : 1500);
-    await seenToast(page, isStatic ? /reader service is busy/ : /Blocked|private|paste/i);
+    await seenToast(page, isStatic ? /could not read .*HTTP 503/ : /Blocked|private|paste/i);
     expect(await page.locator("#companyCard details.company-alt[open]").count() === 1, "paste / upload panel not opened");
     expect(/could not be read/.test(await page.locator("#companyCard .company-alt .notice").textContent()), "no explanation");
   });
@@ -862,10 +870,20 @@ Built on Microsoft Dynamics 365 Business Central with Power BI reporting.`;
       readerMode = "up";
       await page.click("#pEdit");
       // A different website starts fresh: the hand-edited name ("Harborline") gives way to what the new site says.
+      // A failed read says so inside the editor, with Retry; the profile is unchanged.
+      readerMode = "down";
       await page.fill("#peWebsite", "https://www.newco.example/");
       await page.click("#peRead");
-      await seenToast(page, /Read 1 page\(s\) of Harborline Systems\. Adjust anything below, then Save profile/);
+      await seenToast(page, /Could not read newco\.example/);
+      expect(/Could not read newco\.example: .*Your profile is unchanged/.test(await page.locator("#companyCard .pe-error").textContent()), "no error in the editor");
+      // Retry, with the reader busy once: it waits and tries again by itself.
+      readerMode = "busy-once";
+      await page.click("#peRetry");
+      await seenToast(page, /Read 1 page\(s\) of Harborline Systems\. Every field below is updated from the new website/);
       expect(await page.locator("#peSave").count() === 1 && (await page.inputValue("#peName")) === "Harborline Systems", "editor not open with the new site's profile");
+      expect((await page.inputValue("#peSummary")).startsWith("Harborline Systems builds fund accounting"), "description not filled from the new website");
+      const banner = await page.locator("#companyCard .pe-updated").textContent();
+      expect(/Updated from newco\.example/.test(banner) && /Harborline Systems sells/.test(banner), `no update banner: ${banner}`);
       await page.click("#peSave"); await seenToast(page, /Profile saved/);
       expect(/newco\.example/.test(await page.locator("#companyCard .company-head").textContent()), "website not changed");
       readerMode = "down";

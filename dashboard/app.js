@@ -810,13 +810,11 @@ async function liveSearch(p) {
     while (next < jobs.length && !busy) {
       const j = jobs[next++];
       try {
-        const r = await fetch(`${READER}${j.url}`, { headers: j.html ? { "X-Return-Format": "html" } : {} });
-        if (r.status === 429) { busy = true; break; }
-        if (!r.ok) { errors.push(`${j.src} (HTTP ${r.status})`); continue; }
-        const text = await r.text();
+        const text = await readThroughService(j.url, { headers: j.html ? { "X-Return-Format": "html" } : {}, onWait: (sec) => { const b = $("#sRun"); if (b) b.textContent = `Waiting for the reader service: ${sec} s…`; } });
+        const b = $("#sRun"); if (b) b.textContent = `Searching ${j.src} (${Math.min(next, jobs.length)} of ${jobs.length})…`;
         const body = j.json ? JSON.parse(text.slice(text.indexOf("{", Math.max(0, text.indexOf("Markdown Content:"))))) : text;
         for (const x of R().extractPostings(j.ch, body).postings ?? []) found.push({ ...x, channel: j.ch.id, summary: x.summary ?? "" });
-      } catch (e) { errors.push(`${j.src} (${e.message.slice(0, 60)})`); }
+      } catch (e) { if (/busy/.test(e.message)) { busy = true; break; } errors.push(`${j.src} (${e.message.slice(0, 60)})`); }
     }
   };
   await Promise.all([worker(), worker(), worker()]);
@@ -1087,22 +1085,47 @@ function rawToFinding(p) {
  * policy allows no other outside connection. The local dashboard reads websites itself.
  */
 const READER = "https://r.jina.ai/";
-async function readThroughService(url) {
-  const r = await fetch(`${READER}${url}`, { headers: { "X-With-Links-Summary": "true" } });
-  if (r.status === 429) throw new Error("the reader service is busy (it reads 20 pages a minute); try again in a minute");
-  if (!r.ok) throw new Error(`the reader service could not read ${url} (HTTP ${r.status})`);
-  return r.text();
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// The reader's published limit is 20 pages a minute. Tests shorten the waits (kept for the tab's session).
+const tuned = (k, d) => { try { return Number(sessionStorage.getItem(k)) || d; } catch { return d; } };
+let readerPerMinute = tuned("rfp.readerPerMinute", 18), readerRetryMs = tuned("rfp.readerRetryMs", 20000);
+/** Wait for a free slot: the reader allows 20 pages a minute, so at most 18 go out in any minute. */
+async function readerSlot(onWait) {
+  for (;;) {
+    let times = [];
+    try { times = JSON.parse(sessionStorage.getItem("rfp.readerTimes") || "[]"); } catch { /* none */ }
+    const now = Date.now();
+    times = times.filter((t) => now - t < 60000);
+    if (times.length < readerPerMinute) { times.push(now); try { sessionStorage.setItem("rfp.readerTimes", JSON.stringify(times)); } catch { /* ignore */ } return; }
+    const wait = 60000 - (now - times[0]) + 300;
+    onWait?.(Math.ceil(wait / 1000));
+    await sleep(Math.min(wait, 3000));
+  }
+}
+/** One page through the reader, paced and retried twice if the service says it is busy. */
+async function readThroughService(url, { headers = { "X-With-Links-Summary": "true" }, onWait } = {}) {
+  for (let attempt = 0; ; attempt++) {
+    await readerSlot(onWait);
+    const r = await fetch(`${READER}${url}`, { headers });
+    if (r.status === 429 && attempt < 2) { onWait?.(Math.round(readerRetryMs / 1000)); await sleep(readerRetryMs); continue; }
+    if (r.status === 429) throw new Error("the reader service is busy (it reads 20 pages a minute); try again in a minute");
+    if (!r.ok) throw new Error(`the reader service could not read ${url} (HTTP ${r.status})`);
+    return r.text();
+  }
 }
 
-async function buildFromWebsiteStatic(home) {
+async function buildFromWebsiteStatic(home, progress = () => {}) {
   const why = R().blockedReason(home);
   if (why) throw new Error(`${home} is not read: ${why}`);
-  const first = R().markdownFacts(await readThroughService(home), home);
+  const onWait = (s) => progress(`Waiting for the reader service (20 pages a minute): about ${s} s…`);
+  progress("Reading the home page…");
+  const first = R().markdownFacts(await readThroughService(home, { onWait }), home);
   if (!first.text || first.text.length < 200) throw new Error("the page came back almost empty (it may need a sign-in, or block readers)");
   const pages = [first];
-  for (const u of R().profileLinks(home, first, 6)) {
-    if (R().blockedReason(u)) continue;
-    try { pages.push(R().markdownFacts(await readThroughService(u), u)); } catch { /* skip one page, keep the rest */ }
+  const next = R().profileLinks(home, first, 6).filter((u) => !R().blockedReason(u));
+  for (const [i, u] of next.entries()) {
+    progress(`Reading page ${i + 2} of ${next.length + 1}: ${u.replace(/^https?:\/\/[^/]+/, "") || "/"}…`);
+    try { pages.push(R().markdownFacts(await readThroughService(u, { onWait }), u)); } catch { /* skip one page, keep the rest */ }
   }
   const profile = R().buildProfile({ website: home, pages });
   profile.readVia = "r.jina.ai (public reader service)";
@@ -1117,6 +1140,16 @@ async function buildFromWebsite(url, { fromEdit = false } = {}) {
   const old = state.profile, sameSite = !!old?.website && hostOf(old.website) === hostOf(home);
   const btn = $("#pBuild") ?? $("#peRead");
   if (btn) { btn.disabled = true; btn.textContent = "Reading the website…"; }
+  state.profileReading = { site: hostOf(home), step: "Starting…" };
+  state.profileReadError = null;
+  if (fromEdit) renderCompany();
+  const progress = (step) => {
+    state.profileReading = { site: hostOf(home), step };
+    const el = $("#peStatus") ?? $("#pStatus");
+    if (el) el.textContent = step;
+    const b = $("#pBuild") ?? $("#peRead");
+    if (b) b.textContent = step.length > 40 ? "Reading the website…" : step;
+  };
   const finish = async (profile) => {
     if (old && sameSite) profile = mergeManualEdits(profile, old);
     else if (old?.website) await dropReferencesFrom(hostOf(old.website));
@@ -1124,14 +1157,17 @@ async function buildFromWebsite(url, { fromEdit = false } = {}) {
     await refreshKnowledge();
     state.profileFallback = false; state.pendingWebsite = null;
     state.profileEditing = fromEdit; state.profileDraft = fromEdit ? structuredClone(profile) : null;
-    toast(`Read ${profile.pagesRead?.length ?? 1} page(s) of ${profile.name}.${old && sameSite && old.edited ? " Your own changes were kept." : ""} ${fromEdit ? "Adjust anything below, then Save profile." : "Check the summary below and switch off anything that is wrong."}`);
+    state.profileJustRead = fromEdit ? { site: hostOf(home), pages: profile.pagesRead?.length ?? 1, kept: !!(old && sameSite && old.edited) } : null;
+    toast(`Read ${profile.pagesRead?.length ?? 1} page(s) of ${profile.name}.${old && sameSite && old.edited ? " Your own changes were kept." : ""} ${fromEdit ? "Every field below is updated from the new website: check it, then Save profile." : "Check the summary below and switch off anything that is wrong."}`);
+  };
+  const failed = (message) => {
+    if (fromEdit) { state.profileReadError = { site: hostOf(home), url: home, message }; toast(`Could not read ${hostOf(home)}: ${message}. Your profile is unchanged.`, true); }
+    else { state.profileFallback = true; state.pendingWebsite = home; toast(`Could not read the website: ${message}. Paste its text or upload a brochure instead.`, true); }
   };
   if (STATIC) {
-    try { await finish(await buildFromWebsiteStatic(home)); }
-    catch (e) {
-      if (fromEdit) toast(`Could not read the website: ${e.message}. Your profile is unchanged.`, true);
-      else { state.profileFallback = true; state.pendingWebsite = home; toast(`Could not read the website: ${e.message}. Paste its text or upload a brochure instead.`, true); }
-    }
+    try { await finish(await buildFromWebsiteStatic(home, progress)); }
+    catch (e) { failed(e.message); }
+    state.profileReading = null;
     renderCompany(); renderSweepResults();
     return;
   }
@@ -1140,10 +1176,8 @@ async function buildFromWebsite(url, { fromEdit = false } = {}) {
     const profile = await r.json();
     if (!r.ok) throw new Error(profile.error);
     await finish(profile); // the server also added the website's pages to the reference library
-  } catch (e) {
-    if (fromEdit) toast(`${e.message}. Your profile is unchanged.`, true);
-    else { state.profileFallback = true; state.pendingWebsite = home; toast(`${e.message}. Paste the text of your website or upload a brochure instead.`, true); }
-  }
+  } catch (e) { failed(e.message); }
+  state.profileReading = null;
   renderCompany(); renderSweepResults();
 }
 
@@ -1247,10 +1281,16 @@ function renderProfileEditor(box) {
   const other = h("input", { id: "peOtherPlat", placeholder: "another platform", "aria-label": "Another platform" });
   const addOther = () => { const n = other.value.trim(); if (!n) return; if (!plats.some((x) => x.name.toLowerCase() === n.toLowerCase())) plats.push({ name: n, mentions: 0, on: true, custom: true }); redraw(); };
   other.addEventListener("keydown", (e) => { if (e.key === "Enter") addOther(); });
+  const reading = state.profileReading, justRead = state.profileJustRead, readError = state.profileReadError;
+  state.profileJustRead = null;
   box.replaceChildren(
     profileHeader(saved, true),
-    h("div", { class: "profile-editor" },
+    h("div", { class: `profile-editor ${reading ? "is-reading" : ""}` },
       h("h3", {}, "Edit your company profile"),
+      ...(reading ? [h("p", { class: "notice pe-status", id: "peStatus", role: "status" }, `Reading ${reading.site}: ${reading.step}`)] : []),
+      ...(readError ? [h("p", { class: "notice pe-error", role: "alert" }, `Could not read ${readError.site}: ${readError.message}. Your profile is unchanged. `, h("button", { class: "keep", id: "peRetry", onclick: () => buildFromWebsite(readError.url, { fromEdit: true }) }, "Retry"))] : []),
+      ...(justRead ? [h("div", { class: "notice ok-note pe-updated" }, h("div", {}, h("strong", {}, `Updated from ${justRead.site}`), ` (${justRead.pages} page${justRead.pages === 1 ? "" : "s"} read${justRead.kept ? "; your own changes were kept" : ""}). Every field below now reflects the website: check it, change anything, then Save profile.`),
+        h("div", { class: "co-summary" }, R().profileSummary(d)))] : []),
       h("div", { class: "pe-row" }, h("label", { for: "peWebsite" }, "Website"), h("div", { class: "row" }, website, h("button", { class: "keep", id: "peRead", onclick: readSite }, d.website ? "Read this website again" : "Read this website")),
         h("p", { class: "hint" }, "Reading picks up what the site says about what you sell. The same website keeps the changes you made here; a new one starts fresh.")),
       h("div", { class: "pe-row" }, h("label", { for: "peName" }, "Company name"), field("input", { id: "peName", value: d.name ?? "" }, "name")),
@@ -1271,7 +1311,9 @@ function renderProfileEditor(box) {
           h("h4", { class: "mt" }, "Product names"), field("input", { id: "peProducts", value: (d.products ?? []).join(", "), placeholder: "e.g. Your ERP, Your Payroll" }, "products", list))),
       h("div", { class: "row pe-actions" },
         h("button", { class: "primary", id: "peSave", onclick: saveProfileEdits }, "Save profile"),
-        h("button", { class: "keep", id: "peCancel", onclick: () => { state.profileDraft = null; state.profileEditing = false; renderCompany(); toast("Changes discarded."); } }, "Cancel"))));
+        h("button", { class: "keep", id: "peCancel", onclick: () => { state.profileDraft = null; state.profileEditing = false; state.profileReadError = null; renderCompany(); toast("Changes discarded."); } }, "Cancel"))));
+  // While a website is being read, nothing can be edited (the read replaces these fields).
+  if (reading) for (const el of box.querySelectorAll(".profile-editor input, .profile-editor textarea, .profile-editor select, .profile-editor button")) el.disabled = true;
 }
 
 /** Keep the draft, noting which fields a person set (a later read of the same site keeps them). */
