@@ -386,3 +386,13 @@ th.sel, td.sel { width: 32px; text-align: center; }
 .co-understood h4 { margin: 0 0 4px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
 .co-understood .co-summary { margin: 0; max-width: 100ch; }
 .reader-note { margin: 6px 0 0; font-size: 12.5px; }
+
+/* Sortable column headers */
+th button.sort { background: none; border: 0; padding: 0; min-height: 0; font: inherit; font-weight: 600; color: inherit; cursor: pointer; display: inline-flex; gap: 2px; align-items: center; }
+th button.sort:hover, th button.sort:focus-visible { color: var(--accent); }
+th button.sort .arrow { color: var(--muted); font-size: 11px; }
+th button.sort.on .arrow { color: var(--accent); }
+.roles-note { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 12px; margin: 8px 0; font-size: 13px; }
+.roles-note .hint { margin: 0; }
+.tag.role-tag { color: var(--review); border-color: var(--review); }
+.tag.live-tag { color: var(--pursue); border-color: var(--pursue); }

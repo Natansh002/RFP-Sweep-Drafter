@@ -76,6 +76,7 @@ const F = [
   finding("any", { title: "HRIS and Payroll Cloud Based System Purchase", buyer: "Municipality of Example", country: "CA", closeDate: day(10), publishedDate: day(-5), url: "https://www.merx.com/public/solicitations/2", channel: "ca.agg.merx", body: "The Municipality seeks an HRIS and payroll system. The vendor must provide employee self service and position control." }),
   finding("any", { title: "ERP Implementation Services (past due)", buyer: "Town of Pastdue", country: "CA", closeDate: day(-5), publishedDate: day(-40), url: "https://www.merx.com/public/solicitations/3", channel: "ca.agg.merx", body: "ERP implementation services for finance and payroll. The proponent must provide references." }),
   finding("any", { title: "Financial System Replacement (won)", buyer: "City of Wonville", country: "CA", closeDate: day(-20), publishedDate: day(-60), url: "https://www.merx.com/public/solicitations/4", channel: "ca.agg.merx", body: "Financial system replacement, ERP implementation, general ledger." }),
+  finding("any", { title: "5000095999 A.6 Programmer / Software Developer – Level 3 (Senior)", buyer: "Canadian Nuclear Safety Commission (CNSC)", country: "CA", closeDate: day(20), publishedDate: day(-1), url: "https://canadabuys.canada.ca/en/tender-opportunities/tender-notice/x", channel: "ca.federal.canadabuys.open", body: "TBIPS resource request: one (1) senior Microsoft software developer." }),
   finding("any", { title: "Payroll Services Review (archive test)", buyer: "Town of Archiveville", country: "CA", closeDate: day(40), publishedDate: day(-2), url: "https://www.merx.com/public/solicitations/5", channel: "ca.agg.merx", body: "Payroll services review and payroll system options for the town." }),
   finding("any", { title: "ERP Finance Module Upgrade (lost test)", buyer: "Town of Lostville", country: "CA", closeDate: day(45), publishedDate: day(-2), url: "https://www.merx.com/public/solicitations/6", channel: "ca.agg.merx", body: "ERP finance module upgrade: general ledger and accounts payable." }),
 ];
@@ -211,8 +212,32 @@ async function suite(mode, url) {
     await check(P("results render (local search runs live, so this checks the loaded pipeline)"), async () => { await page.selectOption("#sStatus", "active"); await page.selectOption("#sDays", "any"); await page.dispatchEvent("#sStatus", "change"); await page.waitForTimeout(300); expect((await count()) >= 2, "no results"); });
   }
   await check(P("results table: Fit, Opportunity, Customer, Industry, Deadline, Owner, Status (no Value column)"), async () => {
-    const heads = (await page.locator("#sResults thead th").allTextContents()).map((x) => x.trim()).filter(Boolean);
+    const heads = (await page.locator("#sResults thead th").allTextContents()).map((x) => x.replace(/[▲▼↕]/g, "").trim()).filter(Boolean);
     expect(!heads.includes("Value") && heads.join("|") === "Fit|Opportunity|Customer|Industry|Deadline|Owner|Status", `headers: ${heads.join("|")}`);
+  });
+  await check(P("results sort by Fit (highest first, click to reverse) and by Deadline (soonest first)"), async () => {
+    await page.selectOption("#sStatus", "all"); await page.dispatchEvent("#sStatus", "change"); await page.waitForTimeout(250);
+    const fits = async () => (await page.locator("#sResults tbody tr td:first-child .pill").allTextContents()).map((x) => (x === "—" ? -1 : Number(x)));
+    const sorted = (xs, dir) => xs.every((x, i) => i === 0 || (dir === "desc" ? xs[i - 1] >= x : xs[i - 1] <= x));
+    const fitHead = page.locator("#sResults thead th", { hasText: "Fit" });
+    expect((await fitHead.getAttribute("aria-sort")) === "descending" && sorted(await fits(), "desc"), "not highest fit first by default");
+    await fitHead.locator("button").click(); await page.waitForTimeout(150);
+    expect((await page.locator("#sResults thead th", { hasText: "Fit" }).getAttribute("aria-sort")) === "ascending" && sorted(await fits(), "asc"), "second click did not reverse");
+    await page.locator("#sResults thead th", { hasText: "Fit" }).locator("button").click(); await page.waitForTimeout(150);
+    await page.locator("#sResults thead th", { hasText: "Deadline" }).locator("button").click(); await page.waitForTimeout(150);
+    const dates = (await page.locator("#sResults tbody tr td:nth-child(5)").allTextContents()).map((x) => x.slice(0, 10)).filter((x) => /^\d{4}-/.test(x));
+    expect(dates.length >= 2 && dates.every((d, i) => i === 0 || dates[i - 1] <= d), `deadlines not soonest first: ${dates.join(",")}`);
+    await page.locator("#sResults thead th", { hasText: "Fit" }).locator("button").click(); await page.waitForTimeout(150); // back to fit, highest first
+    expect((await page.locator("#sResults thead th", { hasText: "Fit" }).getAttribute("aria-sort")) === "descending", "fit sort not restored");
+    await page.selectOption("#sStatus", "active"); await page.dispatchEvent("#sStatus", "change"); await page.waitForTimeout(200);
+  });
+  await check(P("contractor roles (TBIPS 'A.6 Programmer, Level 3') are hidden by default, and tagged when shown"), async () => {
+    expect(!(await titles()).includes("A.6 Programmer"), "a contractor role is listed by default");
+    expect(/Hide contractor roles \(1\)/.test(await page.locator("#sResults .roles-note").textContent()), "no hide switch");
+    await page.uncheck("#hideRoles"); await page.waitForTimeout(200);
+    const row = page.locator("#sResults tbody tr", { hasText: "A.6 Programmer" });
+    expect((await row.count()) === 1 && /contractor role/.test(await row.textContent()), "not shown with its tag");
+    await page.check("#hideRoles"); await page.waitForTimeout(200);
   });
   const statusCheck = async (v, include, exclude) => {
     await page.selectOption("#sStatus", v); await page.dispatchEvent("#sStatus", "change"); await page.waitForTimeout(250);
@@ -523,6 +548,17 @@ async function suite(mode, url) {
     await page.check("#fChanged"); await page.waitForTimeout(150); await page.uncheck("#fChanged");
     expect(pursue >= 0, "band filter");
   });
+  await check(P("Pipeline sorts by clicking a header (Closes: soonest first, click again: latest first)"), async () => {
+    await tab(page, "findings"); await page.waitForTimeout(200);
+    await page.locator("#findings thead th", { hasText: "Closes" }).locator("button").click(); await page.waitForTimeout(150);
+    const dates = async () => (await page.locator("#findings tbody tr:not(.detail) td:nth-child(5)").allTextContents()).map((x) => x.slice(0, 10)).filter((x) => /^\d{4}-/.test(x));
+    const asc = await dates();
+    expect(asc.length >= 2 && asc.every((d, i) => i === 0 || asc[i - 1] <= d), `not soonest first: ${asc.join(",")}`);
+    await page.locator("#findings thead th", { hasText: "Closes" }).locator("button").click(); await page.waitForTimeout(150);
+    const desc = await dates();
+    expect(desc.every((d, i) => i === 0 || desc[i - 1] >= d), `not latest first: ${desc.join(",")}`);
+    await page.locator("#findings thead th", { hasText: "Score" }).locator("button").click(); await page.waitForTimeout(150); // back to score, highest first
+  });
   await check(P("Pipeline row opens its detail panel, and its fields can be edited"), async () => {
     await page.locator("#findings tbody tr button", { hasText: "Open" }).first().click(); await page.waitForTimeout(200);
     expect(await page.locator("#findings tr.detail").isVisible(), "detail did not open");
@@ -722,11 +758,15 @@ Built on Microsoft Dynamics 365 Business Central with Power BI reporting.`;
   const READER_HOME = `Title: Fund accounting and payroll software | Harborline Systems\n\nURL Source: https://www.harborline.example/\n\nMarkdown Content:\n## Fund accounting for nonprofits and school boards\n\nHarborline Systems builds fund accounting, payroll and grant management software for nonprofits and school districts, on Microsoft Dynamics 365 Business Central.\n\nPayroll and HR\n--------------\n\nPayroll software with position control and collective agreements for school boards, with Power BI reporting on Business Central.\n\nLinks/Buttons:\n[Payroll and HR](https://www.harborline.example/solutions/payroll-hr/)\n[Contact](https://www.harborline.example/contact/)`;
   const READER_PAYROLL = `Title: Payroll and HR | Harborline Systems\n\nMarkdown Content:\n## Payroll and HR for school districts\n\nPayroll software with position control, collective agreement rules, substitute management and an HRIS for school boards and nonprofit employers, on Business Central.`;
   let readerMode = "down";
+  const ymd = (n) => day(n).replace(/-/g, "/");
+  const MERX_HTML = `<table><tr class="mets-table-row odd"><td><a class="solicitation-link" href="/public/supplier/interception/view-notice/1234567?origin=0"><span class="rowTitle">Payroll and HR System Replacement</span></a><span class="buyer-name">Example Library Board</span><span class="location">Toronto, ON, CAN</span><span class="publicationDate">Published ${ymd(-2)}</span><span class="closingDate">Closing ${ymd(30)}</span></td></tr></table>`;
+  const SAM_JSON = `Title: \n\nURL Source: https://sam.gov/api/prod/sgs/v1/search/\n\nMarkdown Content:\n${JSON.stringify({ _embedded: { results: [{ _id: "abc123def456", title: "Payroll System Modernization and ERP Integration", type: { value: "Solicitation" }, responseDate: `${day(25)}T16:00:00+00:00`, publishDate: `${day(-1)}T10:00:00+00:00`, organizationHierarchy: [{ name: "DEPARTMENT OF EXAMPLE" }, { name: "EXAMPLE AGENCY" }], descriptions: [{ content: "Replace the payroll system and integrate it with the ERP (general ledger)." }] }] } })}`;
   if (isStatic) await page.route("https://r.jina.ai/**", (route) => {
     const cors = { "access-control-allow-origin": "*", "access-control-allow-headers": "x-with-links-summary", "content-type": "text/plain" };
     if (route.request().method() === "OPTIONS") return route.fulfill({ status: 204, headers: cors });
     if (readerMode === "down") return route.fulfill({ status: 429, headers: cors, body: "busy" });
-    return route.fulfill({ status: 200, headers: cors, body: /payroll-hr/.test(route.request().url()) ? READER_PAYROLL : READER_HOME });
+    const u = route.request().url();
+    return route.fulfill({ status: 200, headers: cors, body: /merx\.com\/public\/solicitations/.test(u) ? MERX_HTML : /sam\.gov\/api/.test(u) ? SAM_JSON : /payroll-hr/.test(u) ? READER_PAYROLL : READER_HOME });
   });
   await check(P("company: a website that cannot be read falls back to paste / upload, visibly"), async () => {
     await tab(page, "sweep"); await page.waitForTimeout(150);
@@ -767,6 +807,20 @@ Built on Microsoft Dynamics 365 Business Central with Power BI reporting.`;
     expect(all >= relevant && relevant >= 1, `relevant ${relevant}, all ${all}`);
     await page.selectOption("#sStatus", "active"); await page.dispatchEvent("#sStatus", "change"); await page.waitForTimeout(200);
   });
+  if (isStatic) {
+    await check(P("company: the Run button finds RFPs for the company, searching MERX and SAM.gov live for what it sells"), async () => {
+      readerMode = "up";
+      await tab(page, "sweep"); await page.waitForTimeout(200);
+      expect((await page.locator("#sRun").textContent()) === "Find RFPs for Harborline Systems", `button: ${await page.locator("#sRun").textContent()}`);
+      await page.selectOption("#sDays", "any"); await page.selectOption("#sGeo", "na");
+      await page.click("#sRun");
+      await seenToast(page, /Searched MERX and SAM\.gov live for "[^"]+"(, "[^"]+")*, plus the latest scheduled sweep: \d+ RFPs? and RFQs relevant to Harborline Systems/);
+      const body = await page.locator("#sResults tbody").textContent();
+      expect(/Payroll and HR System Replacement/.test(body) && /Payroll System Modernization/.test(body), "live finds not listed");
+      expect((await page.locator("#sResults tbody tr", { hasText: "Payroll and HR System Replacement" }).locator(".live-tag").count()) === 1, "not tagged as found live");
+      readerMode = "down";
+    });
+  }
   await check(P("company: the workspace Fit is on your offering, with no industry in it"), async () => {
     await openFirst();
     const tile = page.locator("#sWorkspace .kpi-btn", { hasText: "Fit to Harborline" });

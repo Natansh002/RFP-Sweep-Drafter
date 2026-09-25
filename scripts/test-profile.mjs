@@ -176,5 +176,13 @@ Links/Buttons:
   a("terms: generic single words left out (they would match every RFP)", !P2.keywords.some((k) => ["management", "system", "time", "software", "data"].includes(k)));
 }
 
+// ---- what the live search asks the portals for
+{
+  const { liveSearchTerms } = await import("../lib/profile.mjs");
+  const terms = liveSearchTerms({ capabilities: [{ id: "payroll", strength: 5, on: true }, { id: "erp", strength: 9, on: true }, { id: "gis", strength: 7, on: false }], platforms: [{ name: "Business Central", on: true }, { name: "Microsoft Azure", on: true }], keywords: ["fund accounting", "payroll"] });
+  a("live search: one term per capability sold (strongest first), then platforms, then own phrases", terms.join("|") === "ERP|payroll system|Business Central|fund accounting");
+  a("live search: at most the number asked for, none for no profile", liveSearchTerms({ capabilities: [{ id: "erp", on: true }], platforms: [], keywords: ["a b", "c d", "e f", "g h", "i j", "k l"] }, 3).length === 3 && liveSearchTerms(null).length === 0);
+}
+
 console.log(fails ? `\n${fails} FAILED, ${passes} passed` : `\nall ${passes} profile assertions passed`);
 process.exit(fails ? 1 : 0);

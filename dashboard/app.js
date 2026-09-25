@@ -299,13 +299,12 @@ function renderKpis() {
 function filtered() {
   const q = $("#q").value.trim().toLowerCase();
   const ind = $("#fIndustry").value, band = $("#fBand").value, st = $("#fStatus").value, who = $("#fAssignee").value;
-  return state.ledger.findings
+  return sortRows("pipeline", state.ledger.findings
     .filter((f) => (!ind || f.industry === ind) && (!band || f.band === band))
     .filter((f) => (st === "*" ? true : st ? f.status === st : OPEN.has(f.status)))
     .filter((f) => (!who ? true : who === "__none" ? !f.assignee : f.assignee === who))
     .filter((f) => !$("#fChanged").checked || f.changed)
-    .filter((f) => !q || `${f.title} ${f.buyer ?? ""} ${f.notes ?? ""} ${f.id}`.toLowerCase().includes(q))
-    .sort((a, b) => b.score - a.score);
+    .filter((f) => !q || `${f.title} ${f.buyer ?? ""} ${f.notes ?? ""} ${f.id}`.toLowerCase().includes(q)));
 }
 
 function statusSelect(f) {
@@ -327,6 +326,7 @@ function renderFindings() {
 }
 
 function renderFindingsRows() {
+  renderPipelineHeader();
   const rows = filtered();
   const tbody = $("#findings tbody");
   tbody.replaceChildren();
@@ -505,6 +505,14 @@ $("#me").addEventListener("change", (e) => { store.set("rfp.me", e.target.value.
 for (const id of ["q", "fIndustry", "fBand", "fStatus", "fAssignee", "fChanged"]) $(`#${id}`).addEventListener("input", renderFindings);
 for (const id of ["aAssignee", "aShowDone"]) $(`#${id}`).addEventListener("input", renderActions);
 for (const b of document.querySelectorAll(".main-tabs button")) b.addEventListener("click", () => switchTab(b.dataset.tab));
+// Pipeline table headers sort too (the header row is static markup, rebuilt here with sort buttons).
+function renderPipelineHeader() {
+  const row = $("#findings thead tr");
+  if (!row) return;
+  const all = row.querySelector("#selAllFindings");
+  row.replaceChildren(h("th", { class: "sel" }, all), sortHeader("pipeline", "score", "Score", { class: "num" }), sortHeader("pipeline", "title", "Opportunity"), sortHeader("pipeline", "industry", "Industry"),
+    sortHeader("pipeline", "closes", "Closes"), sortHeader("pipeline", "status", "Status"), sortHeader("pipeline", "assignee", "Assignee"), sortHeader("pipeline", "actions", "Actions", { class: "num" }), h("th", {}, ""));
+}
 $("#selAllFindings").addEventListener("change", (e) => { for (const b of document.querySelectorAll("#findings .sel-finding")) { b.checked = e.target.checked; } for (const f of filtered()) e.target.checked ? state.sel.findings.add(f.id) : state.sel.findings.delete(f.id); renderBulk(); });
 $("#selAllActions").addEventListener("change", (e) => { for (const b of document.querySelectorAll("#actions .sel-action")) { b.checked = e.target.checked; b.dispatchEvent(new Event("change")); } });
 
@@ -681,13 +689,13 @@ function setupSweepForm() {
   // Changing the status filter re-filters at once; no new sweep is needed.
   $("#sStatus").addEventListener("change", () => { state.sweepIds = null; state.sweepFiltered = true; renderSweepResults(); });
   const note = STATIC
-    ? ["Searches the latest scheduled sweep of CanadaBuys open data, SAM.gov and the public portals (refreshed every 6 hours)."]
-    : ["Runs a live sweep of CanadaBuys open data, SAM.gov and the public portals, then scores every posting. Takes up to a minute."];
+    ? ["Searches the latest scheduled sweep of CanadaBuys open data, SAM.gov and the public portals (refreshed every 6 hours). Once your business is understood (Your company, above), it also searches MERX and SAM.gov live for what you sell, through the reader service, and shows the RFPs and RFQs relevant to you."]
+    : ["Runs a live sweep of CanadaBuys open data, SAM.gov and the public portals, using your company's offering once it is understood, then scores every posting. Takes up to a minute."];
   if (STATIC && state.meta.repo) note.push(" To refresh now: ", h("a", { href: `https://github.com/${state.meta.repo}/actions/workflows/pages.yml`, target: "_blank", rel: "noopener noreferrer" }, "run the sweep workflow"), " (about two minutes).");
   $("#sNote").replaceChildren(...note);
   $("#sRun").onclick = runSearch;
   fetchLedgerFor(GENERAL).then((l) => { state.allLedger = l; renderSweepResults(); });
-  loadProfile().then(() => renderSweepResults());
+  loadProfile().then(() => { $("#sRun").textContent = runLabel(); renderSweepResults(); });
 }
 
 function sweepParams() {
@@ -715,6 +723,47 @@ function industryMatch(f, sel) {
 }
 
 const OPEN_STATUSES = new Set(["New", "Qualifying", "Pursuing", "Drafting"]);
+
+/**
+ * Sortable tables. `keys` maps a column to a value getter; missing values always sort last.
+ * The choice is remembered per table in this browser.
+ */
+const SORTS = {
+  sweep: { fit: (f) => fitOf(f).score, title: (f) => f.title, buyer: (f) => f.buyer, industry: (f) => sectorOf(f)?.label, deadline: (f) => f.closeDate, owner: (f) => f.assignee || (f.team ? f.team.rfpManager ?? "RFP Manager" : ""), status: (f) => f.status },
+  pipeline: { score: (f) => f.score, title: (f) => f.title, industry: (f) => sectorOf(f)?.label ?? f.industry, closes: (f) => f.closeDate, status: (f) => f.status, assignee: (f) => f.assignee, actions: (f) => (f.actions ?? []).filter((a) => !a.done).length },
+};
+const SORT_DEFAULT = { sweep: { key: "fit", dir: "desc" }, pipeline: { key: "score", dir: "desc" } };
+// Numbers and fit start highest-first; words A to Z; dates soonest first.
+const FIRST_DIR = { fit: "desc", score: "desc", actions: "desc" };
+state.sort = (() => { try { return { ...SORT_DEFAULT, ...JSON.parse(localStorage.getItem("rfp.sort") || "{}") }; } catch { return { ...SORT_DEFAULT }; } })();
+
+function sortRows(table, rows) {
+  const { key, dir } = state.sort[table] ?? SORT_DEFAULT[table];
+  const get = SORTS[table][key] ?? SORTS[table][SORT_DEFAULT[table].key];
+  const sign = dir === "asc" ? 1 : -1;
+  const tie = SORTS[table][SORT_DEFAULT[table].key];
+  return rows.map((f) => ({ f, v: get(f) })).sort((a, b) => {
+    const x = a.v, y = b.v, xe = x == null || x === "", ye = y == null || y === "";
+    if (xe || ye) return xe && ye ? (tie(b.f) ?? -1) - (tie(a.f) ?? -1) : xe ? 1 : -1;
+    const c = typeof x === "number" && typeof y === "number" ? x - y : String(x).localeCompare(String(y), undefined, { sensitivity: "base", numeric: true });
+    return c ? c * sign : (tie(b.f) ?? -1) - (tie(a.f) ?? -1);
+  }).map((x) => x.f);
+}
+
+function setSort(table, key) {
+  const cur = state.sort[table] ?? SORT_DEFAULT[table];
+  state.sort[table] = cur.key === key ? { key, dir: cur.dir === "asc" ? "desc" : "asc" } : { key, dir: FIRST_DIR[key] ?? "asc" };
+  try { localStorage.setItem("rfp.sort", JSON.stringify(state.sort)); } catch { /* ignore */ }
+}
+
+/** A header cell that sorts its table, with the current order shown and announced. */
+function sortHeader(table, key, label, extra = {}) {
+  const cur = state.sort[table] ?? SORT_DEFAULT[table];
+  const on = cur.key === key;
+  return h("th", { ...extra, "aria-sort": on ? (cur.dir === "asc" ? "ascending" : "descending") : "none" },
+    h("button", { class: `keep sort ${on ? "on" : ""}`, title: `Sort by ${label.toLowerCase()}`, onclick: () => { setSort(table, key); table === "sweep" ? renderSweepResults() : renderFindings(); } },
+      label, h("span", { class: "arrow", "aria-hidden": "true" }, on ? (cur.dir === "asc" ? " ▲" : " ▼") : " ↕")));
+}
 /** Active: still open. Past due: closing date passed while we had not submitted or decided. Closed: date passed or decided. */
 function lifecycle(f, today = new Date().toISOString().slice(0, 10)) {
   const passed = f.closeDate && f.closeDate < today;
@@ -741,19 +790,60 @@ function clientFilter(findings, p) {
     statusMatch(f, p.status ?? "active"));
 }
 
+/**
+ * Published page, with a company profile: search MERX (Canada) and SAM.gov (US) live for the
+ * company's offering, through the reader service (only public search addresses are sent), and
+ * parse the results with the sweep's own parsers. They join the latest scheduled sweep, and
+ * company fit decides what is relevant.
+ */
+async function liveSearch(p) {
+  const terms = R().liveSearchTerms(state.profile, 6);
+  const geo = state.meta.geographies.find((g) => g.id === p.geography)?.countries ?? ["CA", "US"];
+  const jobs = [];
+  for (const t of terms) {
+    if (geo.includes("CA")) jobs.push({ src: "MERX", ch: { id: "ca.agg.merx", format: "merx-html", url: "https://www.merx.com", country: "CA" }, url: `https://www.merx.com/public/solicitations/open?keywords=${encodeURIComponent(t)}`, html: true });
+    if (geo.includes("US")) jobs.push({ src: "SAM.gov", ch: { id: "us.federal.sam.search", format: "sam-sgs", url: "https://sam.gov", country: "US" }, url: `https://sam.gov/api/prod/sgs/v1/search/?index=opp&q=${encodeURIComponent(t)}&size=25&sort=-modifiedDate&mode=search&is_active=true`, json: true });
+  }
+  const found = [], errors = [];
+  let busy = false, next = 0;
+  const worker = async () => {
+    while (next < jobs.length && !busy) {
+      const j = jobs[next++];
+      try {
+        const r = await fetch(`${READER}${j.url}`, { headers: j.html ? { "X-Return-Format": "html" } : {} });
+        if (r.status === 429) { busy = true; break; }
+        if (!r.ok) { errors.push(`${j.src} (HTTP ${r.status})`); continue; }
+        const text = await r.text();
+        const body = j.json ? JSON.parse(text.slice(text.indexOf("{", Math.max(0, text.indexOf("Markdown Content:"))))) : text;
+        for (const x of R().extractPostings(j.ch, body).postings ?? []) found.push({ ...x, channel: j.ch.id, summary: x.summary ?? "" });
+      } catch (e) { errors.push(`${j.src} (${e.message.slice(0, 60)})`); }
+    }
+  };
+  await Promise.all([worker(), worker(), worker()]);
+  const today = new Date().toISOString().slice(0, 10), seen = new Set();
+  state.livePostings = found
+    .filter((x) => x.title && (!x.closeDate || x.closeDate >= today))
+    .filter((x) => { const k = `${x.title.toLowerCase()}|${(x.buyer ?? "").toLowerCase()}`; if (seen.has(k)) return false; seen.add(k); return true; })
+    .map((x) => ({ ...rawToFinding(x), live: true }));
+  return { terms, sources: [...new Set(jobs.map((j) => j.src))], n: state.livePostings.length, busy, errors };
+}
+
 async function runSearch() {
   const p = sweepParams();
   const btn = $("#sRun");
   if (STATIC) {
-    btn.disabled = true; btn.textContent = "Searching…";
-    await new Promise((r) => setTimeout(r, 350));
+    btn.disabled = true; btn.textContent = state.profile ? `Searching for ${state.profile.name}…` : "Searching…";
+    let live = null;
+    if (state.profile) { try { live = await liveSearch(p); } catch (e) { live = { terms: [], sources: [], n: 0, errors: [e.message] }; } }
+    else await new Promise((r) => setTimeout(r, 350));
     const all = state.allLedger?.findings ?? [];
     const hits = clientFilter(all, p);
     state.sweepIds = new Set(hits.map((f) => f.id));
     state.sweepLow = null;
-    btn.disabled = false; btn.textContent = "Run RFP Sweep";
+    btn.disabled = false; btn.textContent = runLabel();
     renderSweepResults();
-    toast(`Searched ${all.length} opportunities from the latest sweep: ${hits.length} matched.`);
+    if (live) toast(`Searched ${live.sources.join(" and ") || "the portals"} live for ${live.terms.map((t) => `"${t}"`).join(", ")}, plus the latest scheduled sweep: ${state.lastRelevance?.relevant ?? 0} RFP${state.lastRelevance?.relevant === 1 ? "" : "s"} and RFQs relevant to ${state.profile.name}.${live.busy ? " The reader service was busy, so some searches were skipped; try again in a minute." : ""}${live.errors.length ? ` Not read: ${live.errors.slice(0, 2).join(", ")}.` : ""}`, !!live.busy);
+    else toast(`Searched ${all.length} opportunities from the latest sweep: ${hits.length} matched.`);
     $("#sResults").scrollIntoView({ behavior: "smooth", block: "start" });
     return;
   }
@@ -771,9 +861,12 @@ async function runSearch() {
     state.sweepLow = r.low;
     if (r.gaps) toast(`${r.gaps} source(s) could not be read this time (bot checks, sign-ins or errors); the rest were swept.`);
   } catch (e) { toast(e.message, true); }
-  btn.disabled = false; btn.textContent = "Run RFP Sweep";
+  btn.disabled = false; btn.textContent = runLabel();
   renderSweepResults();
 }
+
+/** With a company profile the button says what it does: find this company's RFPs. */
+function runLabel() { return state.profile ? `Find RFPs for ${state.profile.name}` : "Run RFP Sweep"; }
 
 /** What each workflow step shows when clicked. */
 const FLOW_FILTERS = {
@@ -842,12 +935,19 @@ function renderSweepResults() {
   let relevance = null;
   if (state.profile) {
     const have = new Set(list.map((f) => `${(f.title ?? "").toLowerCase()}|${(f.buyer ?? "").toLowerCase()}`));
-    const extra = clientFilter((state.postings ?? []).filter((r) => !have.has(`${(r.title ?? "").toLowerCase()}|${(r.buyer ?? "").toLowerCase()}`)), p);
+    const seenExtra = new Set(have);
+    const extra = clientFilter([...(state.livePostings ?? []), ...(state.postings ?? [])].filter((r) => { const k = `${(r.title ?? "").toLowerCase()}|${(r.buyer ?? "").toLowerCase()}`; if (seenExtra.has(k)) return false; seenExtra.add(k); return true; }), p);
     const all = [...list, ...extra];
     const relevant = all.filter((f) => fitOf(f).score >= 40);
     relevance = { all: all.length, relevant: relevant.length };
-    list = (state.relevantOnly ? relevant : all).sort((a, b) => fitOf(b).score - fitOf(a).score || (b.score ?? 0) - (a.score ?? 0));
+    state.lastRelevance = relevance;
+    list = state.relevantOnly ? relevant : all;
   }
+  // Contractor roles (TBIPS "A.6 Programmer, Level 3", temporary help) rent a person: hidden unless asked.
+  const roleOf = (f) => (f._role === undefined ? (f._role = R().contractorRole(f.title, `${f.summary ?? ""} ${String(f.sourceText ?? "").slice(0, 3000)}`)) : f._role);
+  const roles = list.filter((f) => roleOf(f));
+  if (state.hideRoles) list = list.filter((f) => !roleOf(f));
+  list = sortRows("sweep", list);
   renderFlow(state.sweepIds ? list : null);
   let flowNote = null;
   if (state.flowFilter && FLOW_FILTERS[state.flowFilter]) {
@@ -869,18 +969,23 @@ function renderSweepResults() {
   box.replaceChildren(
     ...(geoNote ? [geoNote] : []),
     ...(flowNote ? [flowNote] : []), // replaceChildren prints a null as the text "null"
+    roles.length ? h("div", { class: "roles-note" }, h("label", { class: "check" }, h("input", { type: "checkbox", id: "hideRoles", checked: state.hideRoles, onchange: (e) => { state.hideRoles = e.target.checked; try { localStorage.setItem("rfp.hideRoles", e.target.checked ? "1" : "0"); } catch { /* ignore */ } renderSweepResults(); } }),
+      ` Hide contractor roles (${roles.length})`), h("span", { class: "hint" }, "Notices that rent a person rather than buy a solution: TBIPS / ProServices roles such as \"A.6 Programmer, Level 3\", temporary help, staff augmentation.")) : h("span", {}),
     h("div", { class: "results-head" },
       h("h2", {}, relevance ? `${list.length} ${list.length === 1 ? "opportunity" : "opportunities"} ${state.relevantOnly ? `relevant to ${state.profile.name}` : "found"}` : `${list.length} ${list.length === 1 ? "opportunity" : "opportunities"} found`,
         relevance && state.relevantOnly && relevance.all > relevance.relevant ? h("span", { class: "hint h2-hint" }, ` · ${relevance.all - relevance.relevant} less relevant hidden`) : null),
       h("span", { class: "counts" }, h("span", { class: "pill pursue" }, `${high} ${state.profile ? "Strong fit" : "High fit"}`), " ", h("span", { class: "pill review" }, `${review} ${state.profile ? "Possible fit" : "Review"}`), state.sweepLow != null && !state.profile ? [" ", h("span", { class: "pill low" }, `${state.sweepLow} Low fit (not listed)`)] : "")),
     list.length ? h("div", { class: "tablewrap" }, h("table", { class: "grid" },
-      h("thead", {}, h("tr", {}, ...["Fit", "Opportunity", "Customer", "Industry", "Deadline", "Owner", "Status", ""].map((x) => h("th", { title: x === "Fit" ? (state.profile ? `Fit to what ${state.profile.name} sells, from its website` : "Add your company website to score fit on what you sell") : "" }, x)))),
+      h("thead", {}, h("tr", {},
+        sortHeader("sweep", "fit", "Fit", { title: state.profile ? `Fit to what ${state.profile.name} sells, from its website` : "Add your company website to score fit on what you sell" }),
+        sortHeader("sweep", "title", "Opportunity"), sortHeader("sweep", "buyer", "Customer"), sortHeader("sweep", "industry", "Industry"),
+        sortHeader("sweep", "deadline", "Deadline"), sortHeader("sweep", "owner", "Owner"), sortHeader("sweep", "status", "Status"), h("th", {}, ""))),
       h("tbody", {}, ...list.map((f) => {
         const d = daysLeft(f.closeDate);
         return h("tr", { class: state.ws?.finding?.id === f.id ? "selected" : "" },
           h("td", {}, (() => { const x = fitOf(f); return h("span", { class: `pill ${x.band}`, title: x.why }, x.score ?? "—"); })()),
           h("td", { class: "title" }, f.url ? h("a", { href: f.url, target: "_blank", rel: "noopener noreferrer" }, f.title) : f.title,
-            h("div", { class: "buyer" }, (f.capabilities ?? []).slice(0, 2).map((c) => h("span", { class: "tag" }, c.label)), f.noticeType ? h("span", { class: "tag" }, f.noticeType) : null)),
+            h("div", { class: "buyer" }, f.live ? h("span", { class: "tag live-tag", title: "Found by the live search just now" }, "found live") : null, roleOf(f) ? h("span", { class: "tag role-tag", title: `Not a solution RFP: ${roleOf(f)}` }, "contractor role") : null, (f.capabilities ?? []).slice(0, 2).map((c) => h("span", { class: "tag" }, c.label)), f.noticeType ? h("span", { class: "tag" }, f.noticeType) : null)),
           h("td", {}, f.buyer || "—"),
           h("td", {}, (() => { const sc = sectorOf(f); return h("span", { title: sc ? `Inferred: ${sc.basis}` : "" }, sc?.label ?? "—"); })()),
           h("td", {}, f.closeDate ? h("span", { class: `due ${d < 0 ? "over" : d <= 14 ? "soon" : ""}` }, f.closeDate, h("br"), `${d} days`) : h("span", { class: "unassigned" }, "not stated")),
@@ -920,6 +1025,7 @@ function emptySweep(p) {
 
 state.profile = null;
 state.postings = null;
+state.hideRoles = (() => { try { return localStorage.getItem("rfp.hideRoles") !== "0"; } catch { return true; } })();
 state.relevantOnly = true;
 
 async function loadProfile() {
@@ -935,6 +1041,7 @@ async function loadProfile() {
 async function saveProfile(p) {
   state.profile = p;
   forgetFits();
+  if ($("#sRun") && !$("#sRun").disabled) $("#sRun").textContent = runLabel();
   if (STATIC) { try { localStorage.setItem("rfp.profile", JSON.stringify(p)); } catch { /* private window */ } }
   else await fetch("/api/profile", { method: "PUT", headers: { "X-RFP-Dashboard": "1", "content-type": "application/json" }, body: JSON.stringify(p) });
 }
@@ -947,7 +1054,9 @@ function forgetFits() {
 
 async function clearProfile() {
   state.profile = null;
+  state.livePostings = null;
   forgetFits();
+  if ($("#sRun")) $("#sRun").textContent = runLabel();
   if (STATIC) { try { localStorage.removeItem("rfp.profile"); } catch { /* ignore */ } }
   else await fetch("/api/profile", { method: "DELETE", headers: { "X-RFP-Dashboard": "1" } });
   renderCompany(); renderSweepResults();

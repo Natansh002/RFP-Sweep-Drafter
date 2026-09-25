@@ -269,5 +269,21 @@ a("sector: no buyer, no guess", classifySector({}) === null);
   a("fit: qualify says the fit is from the website", qualify(withP).inferred.some((x) => x.label === "Fit score" && /website/.test(x.how)));
 }
 
+// ---- contractor roles rent a person; they are not solution RFPs
+{
+  const { contractorRole } = await import("../lib/noticekind.mjs");
+  const { companyFit } = await import("../lib/profile.mjs");
+  for (const t of ["5000095999 A.6 Programmer / Software Developer – Microsoft Software Developer(s) – Level 3 (Senior)", "A.7 Programmer/Analyst, Level 3", "TBIPS - ORACLE/MS SQL Server Database Administration And Support - PSIB", "NPP – S6119584 - THS SA – One (1) Computer, Application Support. Temporary Help Services against the Supply Arrangement", "Project Manager  – Level 3", "RFSA 2026-5203 IT Staff Augmentation Services and Project Delivery Services"])
+    a(`contractor role: "${t.slice(0, 50)}"`, !!contractorRole(t));
+  for (const t of ["ERP Implementation Services", "HRIS Platform", "Student Information System Replacement", "Digital Experience Platform, CMS Modernization, Migration, and Managed Services", "Azure Cloud Transformation Professional Services", "Business Analyst services for the ERP project", "Request for Information (RFI) for the Modernization of the Professional Services Methods of Supply"])
+    a(`not a contractor role: "${t.slice(0, 50)}"`, !contractorRole(t, "The proponent shall provide implementation services."));
+  a("contractor role: a bare role title counts only when the text asks for resources", !!contractorRole("Senior Programmer", "The contractor must provide one (1) senior programmer.") && !contractorRole("Senior Programmer", "Programming services for the payroll system."));
+  const tb = score({ title: "A.6 Programmer / Software Developer – Level 3 (Senior)", summary: "ERP payroll developer under TBIPS", country: "CA", closeDate: "2026-12-01" }, loadPack("any"), loadTenant("all"));
+  a("sweep: a contractor role is kept out, with the reason", tb.band === "dropped" && /not a solution RFP/.test(tb.reasons[0]));
+  const prof = { name: "Example Co", capabilities: [{ id: "erp", label: "ERP / Finance implementation", on: true }], keywords: ["payroll"], platforms: [{ name: "Business Central", on: true }], products: [], industries: [] };
+  const cf = companyFit({ title: "A.6 Programmer / Software Developer – Business Central ERP – Level 3 (Senior)", summary: "Business Central ERP payroll developer." }, prof);
+  a("fit: a contractor role is weak whatever it mentions, and says why", cf.band === "weak" && cf.score <= 25 && /^Not a solution RFP/.test(cf.reasons[0]));
+}
+
 console.log(fails ? `\n${fails} FAILED, ${passes} passed` : `\nall ${passes} analysis assertions passed`);
 process.exit(fails ? 1 : 0);
