@@ -16,6 +16,7 @@ import { score } from "../lib/score.mjs";
 import { browserBundle } from "../lib/bundle.mjs";
 import { industryIds, loadPack, loadTenant, tenantIds } from "../lib/config.mjs";
 import { classifySector } from "../lib/sector.mjs";
+import { buyerMatches } from "../lib/sweep.mjs";
 import { effectivePack } from "../lib/pack.mjs";
 import { buildSmeReviewWorkbook, parseSmeReviewWorkbook, applySmeReview } from "../lib/smereview.mjs";
 import { namedOrganizations, answerSkeleton, subAsks } from "../lib/respond.mjs";
@@ -220,6 +221,8 @@ a("watch list: KHC procurement page swept every run", JSON.parse(fs.readFileSync
 // ------------------------------------------------------------------ buyer industry
 const sec = (buyer, source = "ca.agg.merx", buyerType = "") => classifySector({ buyer, buyerType, source })?.id;
 a("sector: city, town, municipality", ["City of Coquitlam", "Town of Morinville", "Municipality of Jasper", "Nova Scotia Federation of Municipalities"].every((b) => sec(b) === "municipal"));
+a("never skip: the K-12 sweep keeps OECM as an education buyer", buyerMatches({ buyer: "OECM" }, loadPack("k12")) && !buyerMatches({ buyer: "City of Coquitlam" }, loadPack("k12")));
+a("sector: OECM (Ontario Education Collaborative Marketplace) is K-12", sec("OECM") === "k12" && sec("Ontario Education Collaborative Marketplace") === "k12");
 a("sector: school district is K-12", sec("Surrey School District 36") === "k12" && sec("Conseil scolaire Viamonde") === "k12");
 a("sector: university is higher education", sec("Carleton University") === "higher-ed");
 a("sector: association is nonprofit", sec("Human Resources Professionals Association (HRPA)") === "nonprofit");

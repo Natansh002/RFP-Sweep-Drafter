@@ -523,7 +523,8 @@ function industryMatch(f, sel) {
   if (!sel) return true;
   const [kind, id] = sel.split(":");
   if (kind === "pack") return f.industry === id;
-  if (kind === "sector") return sectorOf(f)?.id === id;
+  // A buyer industry, or what that industry's own search found (e.g. an education co-op for K-12).
+  if (kind === "sector") return sectorOf(f)?.id === id || (f.industry && state.meta.sectors.find((x) => x.id === id)?.pack === f.industry && f.industry !== "any");
   return f.industry === sel; // older saved choice
 }
 
@@ -661,7 +662,7 @@ function renderSweepResults() {
   }
   const high = list.filter((f) => f.band === "pursue").length, review = list.filter((f) => f.band === "review").length;
   box.replaceChildren(
-    flowNote,
+    ...(flowNote ? [flowNote] : []), // replaceChildren prints a null as the text "null"
     h("div", { class: "results-head" },
       h("h2", {}, `${list.length} ${list.length === 1 ? "opportunity" : "opportunities"} found`),
       h("span", { class: "counts" }, h("span", { class: "pill pursue" }, `${high} High fit`), " ", h("span", { class: "pill review" }, `${review} Review`), state.sweepLow != null ? [" ", h("span", { class: "pill low" }, `${state.sweepLow} Low fit (not listed)`)] : "")),
@@ -874,6 +875,36 @@ function explainScore(ws) {
   return h("div", { class: "card explain" }, h("div", { class: "explain-head" }, h("h3", {}, title), h("button", { class: "keep link", onclick: () => { ws.explain = null; renderWorkspace(ws); } }, "Close")), ...body);
 }
 
+/** Why a tab is empty when no requirements were found, and how to fix it right here. */
+function noRequirements(ws, where) {
+  const words = ws.text ? ws.text.split(/\s+/).filter(Boolean).length : 0;
+  const onlyNotice = !ws.documentName && words < 400;
+  return h("div", { class: "card empty-reqs" },
+    h("h3", {}, onlyNotice ? "Only the notice summary has been read" : "No requirements or questions found"),
+    h("p", {}, onlyNotice
+      ? `The sweep has the listing's short summary (${words} words), not the RFP document. Summaries rarely contain "shall / must" statements or numbered questions, so there is nothing to map yet${where === "responses" ? " or to draft answers for" : ""}.`
+      : `No "shall / must" statements or response questions (e.g. "4.0.1 Describe…") were found in ${ws.documentName ?? "the text"}. If it is a scanned PDF, it needs OCR first.`),
+    h("ol", { class: "steps" },
+      ws.url ? h("li", {}, "Download the solicitation from the ", h("a", { href: ws.url, target: "_blank", rel: "noopener noreferrer" }, "source"), ".") : h("li", {}, "Get the solicitation document from the buyer or portal."),
+      h("li", {}, "Load it here. It is read in your browser, never uploaded: ", (() => {
+        const input = h("input", { type: "file", accept: ".pdf,.docx,.txt,.md,.html,.htm", class: "keep" });
+        input.addEventListener("change", async () => {
+          const file = input.files[0];
+          if (!file) return;
+          try {
+            toast(`Reading ${file.name}…`);
+            ws.text = await readDocument(file);
+            ws.documentName = file.name;
+            runAnalyze(ws);
+            renderWorkspace(ws);
+            toast(`${file.name}: ${ws.analysis.requirements.length} requirement(s) and question(s) found`);
+          } catch (e) { toast(`Could not read ${file.name}: ${e.message}`, true); }
+        });
+        return input;
+      })()),
+      h("li", {}, "Requirements, compliance, drafted answers and the proposal then fill in automatically.")));
+}
+
 function uploadPrompt(ws) {
   const input = h("input", { type: "file", accept: ".pdf,.docx,.txt,.md,.html,.htm", class: "keep" });
   input.addEventListener("change", async () => {
@@ -919,14 +950,19 @@ function wsTab(ws) {
         h("h3", { class: "mt" }, "Evaluator summary"),
         renderMarkdown(a.summary),
         h("button", { class: "keep", onclick: () => navigator.clipboard?.writeText(a.summary).then(() => toast("Summary copied")) }, "Copy summary")));
-    case "requirements": return h("div", { class: "tablewrap" }, h("table", { class: "grid" },
-      h("thead", {}, h("tr", {}, ...["ID", "Section", "Requirement", "Mandatory", "Category", "Owner", "Compliance"].map((x) => h("th", {}, x)))),
-      h("tbody", {}, ...a.requirements.map((r) => h("tr", {},
-        h("td", {}, r.id), h("td", {}, r.section), h("td", {}, r.text), h("td", {}, r.level === "mandatory" ? h("strong", {}, "Yes") : "No"),
-        h("td", {}, h("span", { class: "tag" }, r.category)), h("td", {}, R().ownerForCategory(r.category, state.meta.matrix)),
-        h("td", {}, comp[r.id] ? h("span", { class: `status ${comp[r.id].status}` }, comp[r.id].status) : h("span", { class: "hint" }, "load a proposal"))))),
-      ), a.compliance ? null : h("p", { class: "hint" }, "To screen compliance, load your draft proposal in Analyze a document."));
+    case "requirements":
+      if (!a.requirements.length) return noRequirements(ws, "requirements");
+      return h("div", {},
+        h("div", { class: "tablewrap" }, h("table", { class: "grid" },
+          h("thead", {}, h("tr", {}, ...["ID", "Section", "Requirement", "Type", "Category", "Owner", "Compliance"].map((x) => h("th", {}, x)))),
+          h("tbody", {}, ...a.requirements.map((r) => h("tr", {},
+            h("td", {}, r.id), h("td", {}, r.section), h("td", {}, r.text),
+            h("td", {}, r.level === "mandatory" ? h("strong", {}, "Mandatory") : r.level === "question" ? "Question" : "Desirable"),
+            h("td", {}, h("span", { class: "tag" }, r.category)), h("td", {}, R().ownerForCategory(r.category, state.meta.matrix)),
+            h("td", {}, comp[r.id] ? h("span", { class: `status ${comp[r.id].status}` }, comp[r.id].status) : h("span", { class: "hint" }, "—"))))))),
+        a.compliance ? null : h("p", { class: "hint mt" }, "To screen compliance, load your draft proposal in Analyze a document."));
     case "responses":
+      if (!a.requirements.length) return noRequirements(ws, "responses");
       if (!ws.answers) return h("div", {}, h("p", { class: "empty" }, "Press Draft response. Answers come only from the approved knowledge base (library/knowledge.json); anything without an approved source is marked SME validation required."), h("button", { class: "primary keep", onclick: () => { runDraft(ws); renderWorkspace(ws); } }, "Draft response"));
       return h("div", {}, h("div", { class: "row sme-row" },
           h("button", { class: "keep", onclick: () => exportSmeReview(ws) }, "Export SME review (.xlsx)"),

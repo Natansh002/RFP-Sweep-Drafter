@@ -276,3 +276,8 @@ body.ws-open { overflow: hidden; }
 .flow-steps li .stat::after { content: " →"; opacity: .6; }
 .flow-note { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; background: var(--edit); border: 1px solid var(--line); border-radius: 6px; padding: 8px 12px; margin: 8px 0; font-size: 13px; }
 .flow-note .hint { flex-basis: 100%; margin: 0; }
+
+.empty-reqs { background: var(--bg); }
+.empty-reqs h3 { margin: 0 0 6px; font-size: 14px; }
+.empty-reqs .steps { margin: 6px 0 0; padding-left: 20px; }
+.empty-reqs .steps li { margin: 4px 0; }

@@ -269,6 +269,20 @@ async function suite(mode, url) {
     expect(!(await page.locator("#sWorkspace.ws-overlay").count()), "backdrop");
   });
 
+  await check(P("a notice-only opportunity explains empty requirements and offers the file picker"), async () => {
+    await page.selectOption("#sStatus", "all"); await page.dispatchEvent("#sStatus", "change"); await page.waitForTimeout(200);
+    try {
+      await page.locator("#sResults tbody tr", { hasText: "(won)" }).locator("button", { hasText: "Open" }).click();
+      await page.waitForSelector("#sWorkspace.ws-overlay .workspace");
+      await page.locator("#sWorkspace .ws-tabs button", { hasText: "Requirements" }).click();
+      const t = await page.locator("#sWorkspace .ws-body").textContent();
+      expect(/Only the notice summary has been read/.test(t) && (await page.locator('#sWorkspace .empty-reqs input[type="file"]').count()) === 1, "no explanation or file picker");
+    } finally {
+      await page.keyboard.press("Escape");
+      await page.selectOption("#sStatus", "active"); await page.dispatchEvent("#sStatus", "change");
+    }
+  });
+
   // ---- analyze a document
   await check(P("Analyze a document runs all five steps on pasted text"), async () => {
     await tab(page, "analyze");
@@ -392,6 +406,13 @@ async function suite(mode, url) {
     });
   }
 
+  await check(P("no stray \"null\" or \"undefined\" text on any screen"), async () => {
+    for (const t of ["sweep", "analyze", "findings", "actions", "coverage"]) {
+      await tab(page, t); await page.waitForTimeout(150);
+      const text = await page.locator(`#tab-${t}`).innerText();
+      expect(!/(^|\s)(null|undefined|NaN|\[object Object\])(\s|$)/.test(text), `${t} screen shows a stray value`);
+    }
+  });
   await check(P("no page or console errors"), async () => expect(errors.length === 0, errors.slice(0, 3).join(" · ")));
   await context.close();
 }
