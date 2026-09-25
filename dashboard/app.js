@@ -1417,6 +1417,7 @@ function wsTab(ws) {
         h("h3", {}, "Why this opportunity matters"), list(q.matters),
         h("h3", { class: "mt" }, "Why we may not qualify"), list(q.mayNotQualify),
         h("h3", { class: "mt" }, "Information still required"), list(q.infoRequired.length ? q.infoRequired : ["Nothing obvious missing."]),
+        q.infoWhere ? h("p", { class: "hint" }, q.infoWhere) : null,
         h("h3", { class: "mt" }, "Recommended next action"), h("p", { class: "next" }, q.nextAction),
         ws.finding && !ws.finding.raw ? decisionRow(ws) : ws.finding?.raw ? h("p", { class: "hint" }, STATIC ? "Not in the pipeline yet, so there is no decision to record here." : "Pursue or No-bid adds it to the pipeline first.") : null,
         ws.finding?.raw && !STATIC ? decisionRow(ws) : null),

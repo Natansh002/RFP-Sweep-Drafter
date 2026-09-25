@@ -131,7 +131,7 @@ a("qualify: those items are no longer 'information still required'", !q.infoRequ
 a("qualify: facts say they came from the documents", q.verified.some((v) => v.label === "Questions deadline" && /RFP document/.test(v.from)) && q.verified.some((v) => v.label === "Evaluation criteria"));
 a("qualify: no 'upload the full document' when the sweep read it", !q.infoRequired.some((x) => /full solicitation document/.test(x)) && !/Get the full RFP/.test(q.nextAction));
 const none = qualify(analyzeRfp({ text: "Snow clearing for school sites. Closing November 20, 2026.", packs, now: NOW, known: { sources: [{ kind: "notice" }, { kind: "document", name: "RFP.pdf", words: 900 }], keyData: {}, fullText: true, notes: [] } }), { rfp: { sources: [{ kind: "notice" }, { kind: "document", name: "RFP.pdf", words: 900 }], notes: [] } });
-a("qualify: a missing item says where the sweep looked", none.infoRequired.some((x) => /^Deadline for questions\. Not stated in the notice or the RFP document read \(RFP\.pdf\)/.test(x)));
+a("qualify: missing items listed once, with where the sweep looked said once", none.infoRequired.some((x) => /^Deadline for questions/.test(x)) && /^None of these is stated in the notice or the RFP document the sweep read \(RFP\.pdf\)/.test(none.infoWhere) && !none.infoRequired.some((x) => /Not stated/.test(x)));
 
 // ---- a sweep fetches the RFP with the posting
 const LIST = `<html><body>${"<p>padding</p>".repeat(80)}<a href="https://portal.example.org/rfp/77">RFP 2026-77 Student Information System Replacement</a></body></html>`;
