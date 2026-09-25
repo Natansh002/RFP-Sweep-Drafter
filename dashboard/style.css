@@ -357,3 +357,21 @@ pre.cmd { background: var(--bg); border: 1px solid var(--line); border-radius: 6
 .crm-value { white-space: pre-wrap; word-break: break-word; font-size: 12.5px; }
 button.linked { border-color: var(--pursue); color: var(--pursue); }
 .no-access { max-width: 640px; margin: 64px auto; }
+
+/* KPI numbers always fit their tile */
+.kpi { min-width: 0; }
+.kpi .v { font-size: clamp(20px, 2.4vw, 26px); overflow-wrap: anywhere; line-height: 1.15; }
+
+/* Your template and references; export */
+.lib-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px 28px; margin-top: 8px; }
+.lib-grid h3 { margin: 0 0 6px; font-size: 14px; }
+.lib-grid textarea { min-height: 96px; }
+.lib-grid .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
+.lib-status { margin: 4px 0; }
+.lib-refs li { padding: 3px 0; word-break: break-word; }
+.hint.err { color: var(--danger); }
+.export-card .row { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; margin: 8px 0; }
+.export-card label { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; }
+.export-list { max-height: 360px; overflow-y: auto; }
+.export-list td { vertical-align: top; }
+.tag.muted { opacity: .75; }

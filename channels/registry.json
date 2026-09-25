@@ -274,6 +274,21 @@
       "note": "Search is behind a sign-in (paid service). The sweeper does not log in or enter credentials, so it reports this channel as needs-account."
     },
     {
+      "id": "ca.agg.rfpschoolwatch",
+      "name": "RFP School Watch (Canada K-12)",
+      "url": "https://www.rfpschoolwatch.com/canada-schools",
+      "level": "aggregator",
+      "country": "CA",
+      "access": "paid",
+      "render": "client",
+      "covers": [
+        "k12"
+      ],
+      "verified": "2026-09-25",
+      "requiresAccount": true,
+      "note": "Tracks Canadian school boards' RFPs. Open bids are shown to subscribers only, and its terms allow copying only for personal, non-commercial use, so the sweeper never reads it. Check it with your subscription; load an RFP you find there in Analyze a document."
+    },
+    {
       "id": "coop.oecm",
       "name": "OECM",
       "url": "https://oecm.bonfirehub.ca/portal",

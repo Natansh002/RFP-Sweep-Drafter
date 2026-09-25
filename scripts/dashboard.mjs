@@ -24,7 +24,9 @@ import { loadLedger, saveLedger, mergeRun, updateFinding, addAction, updateActio
 import { workbookBuffer, importWorkbook, writeWorkbook } from "../lib/excel.mjs";
 import { runSweep, readPublicPage } from "../lib/sweep.mjs";
 import { pageFacts, textFacts, profileLinks, buildProfile } from "../lib/profile.mjs";
-import { readStore, writeStore, mergePostings, writeTexts, readText } from "../lib/ledger.mjs";
+import { readStore, writeStore, mergePostings, writeTexts, readText, privateFile } from "../lib/ledger.mjs";
+import { makeReference, linksIn } from "../lib/references.mjs";
+import { pageText } from "../lib/enrich.mjs";
 import { effectivePack } from "../lib/pack.mjs";
 import { draftResponse, findingId } from "../lib/draft.mjs";
 import { safeLink } from "../lib/guard.mjs";
@@ -96,6 +98,9 @@ function tenantSummary(id) {
   };
 }
 
+const readPrivate = (name) => { try { const p = privateFile(ROOT, name); return fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, "utf8")) : null; } catch { return null; } };
+const writePrivate = (name, value) => { const p = privateFile(ROOT, name); fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, JSON.stringify(value, null, 2)); };
+
 const routes = [
   ["GET", /^\/api\/meta$/, async () => ({ tenants: tenantIds().map(tenantSummary), ...sharedMeta({ includePrivate: true }) })],
 
@@ -152,6 +157,54 @@ const routes = [
     return profile;
   }],
   ["GET", /^\/api\/postings$/, async () => readStore(ROOT, "postings.json", { postings: [] })],
+
+  // ---- your response template and reference library (library/private/, gitignored, never published)
+  ["GET", /^\/api\/library$/, async () => {
+    const refs = readPrivate("references.local.json")?.references ?? [];
+    return { template: readPrivate("template.json"), references: refs.map(({ passages, ...r }) => ({ ...r, passages: passages?.length ?? 0 })) };
+  }],
+  ["GET", /^\/api\/library\/template$/, async () => {
+    const meta = readPrivate("template.json");
+    if (!meta) throw Object.assign(new Error("No template uploaded yet."), { status: 404 });
+    return { __file: fs.readFileSync(privateFile(ROOT, `template.${meta.type}`)), type: meta.type === "xlsx" ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" : "application/vnd.openxmlformats-officedocument.wordprocessingml.document", name: meta.name.replace(/[^\w. -]/g, "_") };
+  }],
+  ["PUT", /^\/api\/library\/template$/, async (req) => {
+    const name = String(req.headers["x-file-name"] ?? "").slice(0, 120);
+    const type = /\.xlsx$/i.test(name) ? "xlsx" : /\.docx$/i.test(name) ? "docx" : null;
+    const buf = await readBody(req, 10 * 1024 * 1024);
+    if (!type || buf[0] !== 0x50 || buf[1] !== 0x4b) throw Object.assign(new Error("Upload a Word (.docx) or Excel (.xlsx) template."), { status: 400 });
+    fs.mkdirSync(path.dirname(privateFile(ROOT, "x")), { recursive: true });
+    for (const t of ["docx", "xlsx"]) fs.rmSync(privateFile(ROOT, `template.${t}`), { force: true });
+    fs.writeFileSync(privateFile(ROOT, `template.${type}`), buf);
+    const meta = { name, type, size: buf.length, uploadedAt: new Date().toISOString(), tags: String(req.headers["x-template-tags"] ?? "").split(",").map((x) => x.trim()).filter(Boolean).slice(0, 60) };
+    writePrivate("template.json", meta);
+    return meta;
+  }],
+  ["DELETE", /^\/api\/library\/template$/, async () => {
+    for (const f of ["template.json", "template.docx", "template.xlsx"]) fs.rmSync(privateFile(ROOT, f), { force: true });
+    return {};
+  }],
+  // Links are read here, through the guard (public pages only); files are read in the browser and sent as text.
+  ["POST", /^\/api\/library\/references$/, async (req) => {
+    const b = await json(req);
+    const added = [];
+    for (const url of linksIn((b.links ?? []).join("\n")).slice(0, 25)) {
+      const page = await readPublicPage(url).catch((e) => ({ error: e.message }));
+      if (page.error) { added.push(makeReference({ source: url, kind: "link", error: /^Blocked:/.test(page.error) ? "Internal tools and private addresses are never read. Upload the file instead." : `Could not read it (${page.error}).` })); continue; }
+      added.push(makeReference({ source: url, title: pageFacts(page.html, url).title, kind: "link", text: pageText(page.html) }));
+    }
+    for (const f of (b.files ?? []).slice(0, 25)) added.push(makeReference({ source: String(f.name ?? "file").slice(0, 160), kind: "file", text: String(f.text ?? "").slice(0, 2_000_000) }));
+    const cur = readPrivate("references.local.json")?.references ?? [];
+    const byId = new Map(cur.map((r) => [r.id, r]));
+    for (const r of added) byId.set(r.id, r);
+    writePrivate("references.local.json", { references: [...byId.values()] });
+    return { added: added.map(({ passages, ...r }) => ({ ...r, passages: passages.length })), references: [...byId.values()].map(({ passages, ...r }) => ({ ...r, passages: passages?.length ?? 0 })) };
+  }],
+  ["DELETE", /^\/api\/library\/references\/([\w-]+)$/, async (req, u, [id]) => {
+    const cur = readPrivate("references.local.json")?.references ?? [];
+    writePrivate("references.local.json", { references: cur.filter((r) => r.id !== id) });
+    return {};
+  }],
 
   // ---- configuration: who can open the private host, and the sales-platform link (both local files, never published)
   ["GET", /^\/api\/access$/, async () => ({ roles: ACCESS_ROLES, users: readStore(ROOT, "access.json", { users: [] }).users ?? [] })],

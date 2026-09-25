@@ -27,8 +27,8 @@ import { matchCapabilities, recommendTeam } from "../lib/capabilities.mjs";
 import { analyzeDetail } from "../lib/enrich.mjs";
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), "rfp-e2e-"));
-const STORE = path.join(TMP, "store"), OUT = path.join(TMP, "output"), DL = path.join(TMP, "downloads");
-for (const d of [STORE, OUT, DL]) fs.mkdirSync(d, { recursive: true });
+const STORE = path.join(TMP, "store"), OUT = path.join(TMP, "output"), DL = path.join(TMP, "downloads"), LIB = path.join(TMP, "library");
+for (const d of [STORE, OUT, DL, LIB]) fs.mkdirSync(d, { recursive: true });
 const day = (n) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
 
 // ------------------------------------------------------------------ fixture data
@@ -93,7 +93,24 @@ ledger.findings.find((f) => /won/.test(f.title)).status = "Won";
 saveLedger(ROOT, ledger);
 
 // ------------------------------------------------------------------ servers
-const env = { ...process.env, RFP_STORE_DIR: STORE, RFP_OUTPUT_DIR: OUT };
+// The private library (template, references, learned answers) goes to a temporary folder too.
+const env = { ...process.env, RFP_STORE_DIR: STORE, RFP_OUTPUT_DIR: OUT, RFP_LIBRARY_DIR: LIB };
+
+// A company template with {{tags}} and its own letterhead line, and a past response to learn from.
+const TEMPLATE_FILE = path.join(DL, "our-template.docx"), PAST_FILE = path.join(DL, "past-response.txt");
+{
+  const PizZip = (await import("pizzip")).default;
+  const { defaultTemplate } = await import("../lib/export.mjs");
+  const z = new PizZip(defaultTemplate(PizZip));
+  z.file("word/document.xml", z.file("word/document.xml").asText().replace("{{title}}", "{{title}} · ACME LETTERHEAD"));
+  fs.writeFileSync(TEMPLATE_FILE, z.generate({ type: "nodebuffer" }));
+  fs.writeFileSync(PAST_FILE, `RESPONSE TO RFP 2025-12
+4.0.1 Describe your approach to organizational change management and how you engage stakeholders.
+We run change management alongside the build: a change network of champions in every department, stakeholder interviews in week one, and a communications plan that the district approves before each phase.
+4.0.2 How will you train finance and payroll staff?
+Role-based training in the buyer's own processes: super-users first, then end users, with recorded sessions and quick-reference guides for every payroll task.
+`);
+}
 execFileSync(process.execPath, [path.join(ROOT, "scripts", "build-site.mjs")], { env, stdio: "ignore" });
 const SITE = path.join(ROOT, "site");
 const TYPES = { ".html": "text/html", ".js": "text/javascript", ".mjs": "text/javascript", ".css": "text/css", ".json": "application/json", ".xlsx": "application/octet-stream", ".ics": "text/calendar" };
@@ -112,9 +129,14 @@ for (const o of [{}, { channel: "chrome" }]) { try { browser = await chromium.la
 if (!browser) { console.error("No browser available for the end-to-end test."); process.exit(2); }
 
 const results = [];
+let currentPage = null;
 async function check(name, fn) {
   try { await fn(); results.push([true, name]); }
-  catch (e) { results.push([false, `${name} — ${String(e.message).split("\n")[0].slice(0, 200)}`]); }
+  catch (e) {
+    results.push([false, `${name} — ${String(e.message).split("\n")[0].slice(0, 200)}`]);
+    // A failure must not leave the workspace open over the next check (one failure, not twenty).
+    try { if (currentPage && (await currentPage.locator("#sWorkspace.ws-overlay").count())) await currentPage.keyboard.press("Escape"); } catch { /* page gone */ }
+  }
   if (process.env.E2E_VERBOSE) console.log(`${results.at(-1)[0] ? "  ✓" : "  ✗"} ${results.at(-1)[1]}`);
 }
 const expect = (cond, msg) => { if (!cond) throw new Error(msg); };
@@ -160,6 +182,7 @@ const tab = (page, name) => page.click(`.main-tabs button[data-tab="${name}"]`);
 // ------------------------------------------------------------------ the checks, shared by both modes
 async function suite(mode, url) {
   const { page, errors, context } = await openPage(url);
+  currentPage = page;
   const P = (n) => `[${mode}] ${n}`;
   const isStatic = mode === "published site";
   page.on("dialog", (d) => d.accept());
@@ -406,7 +429,69 @@ async function suite(mode, url) {
     expect((await page.inputValue("#aRfpText")).includes("ENTERPRISE RESOURCE PLANNING"), "docx not read");
   });
 
+  // ---- your template, references and export (Analyze a document tab)
+  await check(P("template: a Word template is uploaded, its tags found, and it survives a reload"), async () => {
+    await tab(page, "analyze"); await page.waitForTimeout(300);
+    await page.setInputFiles("#libTemplate", TEMPLATE_FILE);
+    await seenToast(page, /Template saved: our-template\.docx\. \d+ tag\(s\) found/);
+    await page.reload(); await page.waitForSelector("#sRun"); await tab(page, "analyze"); await page.waitForTimeout(800);
+    const t = await page.locator("#libraryCard").textContent();
+    expect(/our-template\.docx/.test(t) && /Tags filled on export: title/.test(t), "template not kept");
+  });
+  await check(P("template: the sample template downloads as a Word file with the tags"), async () => {
+    const f = await download(page, () => page.click("#libSample"));
+    const PizZip = (await import("pizzip")).default;
+    expect(/\{\{#responses\}\}/.test(new PizZip(fs.readFileSync(f)).file("word/document.xml").asText()), "not a template");
+  });
+  await check(P("references: a past response becomes citable passages; an unreadable link is reported"), async () => {
+    await page.fill("#libLinks", isStatic ? "https://www.example.org/solutions" : "http://127.0.0.1:4190/private-page");
+    await page.setInputFiles("#libFiles", PAST_FILE);
+    await page.click("#libAdd");
+    await seenToast(page, /1 reference\(s\) added: 2 passage\(s\)/);
+    await page.waitForTimeout(300);
+    const t = await page.locator("#libraryCard .lib-refs").textContent();
+    expect(/past-response\.txt · 2 passage\(s\)/.test(t), `file not listed: ${t.slice(0, 200)}`);
+    expect(isStatic ? /cannot read other websites/.test(t) : /never read|Could not read/.test(t), "unreadable link not reported");
+  });
+  await check(P("references: a draft cites the past response, and an SME must confirm it"), async () => {
+    await tab(page, "sweep"); await page.waitForTimeout(200);
+    await page.selectOption("#sStatus", "active"); await page.dispatchEvent("#sStatus", "change"); await page.waitForTimeout(200);
+    await openFirst();
+    await page.locator("#sWorkspace .stepper button", { hasText: "Draft response" }).click(); await page.waitForTimeout(400);
+    await page.locator("#sWorkspace .ws-tabs button", { hasText: "Responses" }).click();
+    // Drafts are in editable boxes: read their values, not the page text.
+    const drafts = await page.locator("#sWorkspace .responses textarea").evaluateAll((els) => els.map((e) => e.value).join("\n"));
+    const sources = await page.locator("#sWorkspace .responses").textContent();
+    expect(/change network of champions/.test(drafts) && /Adapted from your reference library/.test(drafts), "the past response is not used");
+    expect(/Reference: past-response\.txt/.test(sources), "the reference is not cited by name");
+    await page.keyboard.press("Escape");
+  });
+  await check(P("export: pick a pipeline and opportunities; the zip holds your filled template per opportunity and a summary"), async () => {
+    await tab(page, "analyze"); await page.waitForTimeout(300);
+    await page.selectOption("#xStatus", "open"); await page.waitForTimeout(500);
+    expect((await page.locator("#exportCard .export-list tbody tr").count()) >= 2, "pipeline list empty");
+    await page.locator("#exportCard button", { hasText: "Select none" }).click(); await page.waitForTimeout(200);
+    await page.check('#exportCard input[aria-label="Export Enterprise Resource Planning (ERP) and Payroll System"]'); await page.waitForTimeout(200);
+    expect(/saved draft/.test(await page.locator("#exportCard .export-list tbody tr", { hasText: "Enterprise Resource Planning (ERP)" }).textContent()), "the saved draft is not recognised");
+    const zipFile = await download(page, () => page.click("#xRun"));
+    await seenToast(page, /Exported 1 response into our-template\.docx: 1 file\(s\) and a summary workbook/);
+    const PizZip = (await import("pizzip")).default;
+    const z = new PizZip(fs.readFileSync(zipFile));
+    const docs = Object.keys(z.files).filter((n) => n.endsWith(".docx"));
+    expect(docs.length === 1 && !!z.file("all-responses.xlsx") && !!z.file("README.txt"), `zip holds: ${Object.keys(z.files).join(", ")}`);
+    const text = new PizZip(z.file(docs[0]).asUint8Array()).file("word/document.xml").asText().replace(/<[^>]+>/g, " ");
+    expect(/Enterprise Resource Planning \(ERP\) and Payroll System · ACME LETTERHEAD/.test(text) && /change network of champions/.test(text) && !/\{\{/.test(text), "template not filled");
+  });
+
   // ---- pipeline
+  await check(P("pipeline value tiles are compact and fit their boxes"), async () => {
+    await tab(page, "findings"); await page.waitForTimeout(300);
+    const tiles = await page.evaluate(() => [...document.querySelectorAll("#kpis .kpi")].map((k) => ({ l: k.querySelector(".l").textContent, v: k.querySelector(".v").textContent, fits: k.querySelector(".v").scrollWidth <= k.querySelector(".v").clientWidth + 1 })));
+    const pub = tiles.find((x) => x.l.startsWith("Published value"));
+    expect(pub && /^\$\d+(\.\d)?[KMB]?$/.test(pub.v), `published value tile: ${pub?.v}`);
+    expect(tiles.some((x) => x.l.startsWith("Pipeline value (being pursued)")), "no pursued-value tile");
+    expect(tiles.every((x) => x.fits), `a tile overflows: ${tiles.filter((x) => !x.fits).map((x) => x.v).join(", ")}`);
+  });
   await check(P("Pipeline shows KPIs, table and every filter works"), async () => {
     await tab(page, "findings"); await page.waitForTimeout(300);
     expect((await page.locator("#kpis .kpi").count()) >= 6, "KPIs missing");
@@ -629,7 +714,8 @@ Built on Microsoft Dynamics 365 Business Central with Power BI reporting.`;
     for (const t of ["sweep", "analyze", "findings", "actions", "config"]) {
       await tab(page, t); await page.waitForTimeout(150);
       const text = await page.locator(`#tab-${t}`).innerText();
-      expect(!/(^|\s)(null|undefined|NaN|\[object Object\])(\s|$)/.test(text), `${t} screen shows a stray value`);
+      const stray = text.match(/\bundefined\b|\bNaN\b|\[object \w+\]|(^|[\s(])null(?=[\s),.]|$)/);
+      expect(!stray, `${t} screen shows a stray value: "${stray?.[0]}"`);
     }
   });
   await check(P("no page or console errors"), async () => expect(errors.length === 0, errors.slice(0, 3).join(" · ")));

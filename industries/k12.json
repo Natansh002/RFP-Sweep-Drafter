@@ -56,6 +56,11 @@
       "note": "7. Ontario public-sector opportunities, public guest list."
     },
     {
+      "ref": "ca.agg.rfpschoolwatch",
+      "priority": 1,
+      "note": "8. Canada K-12 aggregator (subscription): listed for people to check; never read automatically (subscriber-only bids, terms forbid commercial copying)."
+    },
+    {
       "ref": "ca.federal.canadabuys.open",
       "priority": 1,
       "note": "Structured open data with full descriptions."

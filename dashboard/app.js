@@ -78,6 +78,8 @@ function goNoGo(answers) {
 }
 const tenantMeta = () => state.meta.tenants.find((t) => t.id === state.tenant);
 const money = (v) => (v == null ? "" : new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(v));
+/** $6.3M, $450K, $1.2B: fits a tile; the exact figure goes in the tooltip. */
+const compactMoney = (v) => (v == null ? "—" : v >= 1e9 ? `$${(v / 1e9).toFixed(v >= 1e10 ? 0 : 1).replace(/\.0$/, "")}B` : v >= 1e6 ? `$${(v / 1e6).toFixed(v >= 1e7 ? 0 : 1).replace(/\.0$/, "")}M` : v >= 1e3 ? `$${Math.round(v / 1e3)}K` : `$${Math.round(v)}`);
 const daysLeft = (d) => (d ? Math.round((new Date(`${d}T00:00:00`) - new Date(new Date().toDateString())) / DAY) : null);
 const findingById = (id) => state.ledger.findings.find((f) => f.id === id);
 const team = () => state.meta.tenants.find((t) => t.id === state.tenant)?.team ?? [];
@@ -122,6 +124,7 @@ async function loadMeta() {
   sel.value = state.tenant;
   $("#me").value = store.get("rfp.me", "");
   await loadPrincipal();
+  loadLibrary();
   const fs = $("#fStatus");
   for (const s of state.meta.statuses) fs.append(h("option", { value: s }, s));
   onTenant();
@@ -191,7 +194,13 @@ function renderKpis() {
   const over = acts.filter((a) => a.due && daysLeft(a.due) < 0).length;
   const soon = acts.filter((a) => a.due && daysLeft(a.due) >= 0 && daysLeft(a.due) <= 7).length;
   const won = state.ledger.findings.filter((f) => f.status === "Won").length, lost = state.ledger.findings.filter((f) => f.status === "Lost").length;
-  const pipeline = open.reduce((a, f) => a + (f.estimatedValue ?? 0), 0);
+  // Pipeline value counts what someone is working (Qualifying → Submitted) and still open; the
+  // published value of every open RFP is shown separately, since most are not qualified yet.
+  const today = new Date().toISOString().slice(0, 10);
+  const worked = state.ledger.findings.filter((f) => ["Qualifying", "Pursuing", "Drafting", "Submitted"].includes(f.status) && (f.status === "Submitted" || !f.closeDate || f.closeDate >= today) && f.estimatedValue);
+  const pipeline = worked.reduce((a, f) => a + f.estimatedValue, 0);
+  const published = open.filter((f) => f.estimatedValue && (!f.closeDate || f.closeDate >= today));
+  const publishedValue = published.reduce((a, f) => a + f.estimatedValue, 0);
   const changed = open.filter((f) => f.changed).length;
   const tiles = [
     ["Open findings", open.length],
@@ -201,10 +210,11 @@ function renderKpis() {
     ["Actions due ≤ 7 days", soon],
     ["Overdue actions", over, over > 0],
     ["Changed since last sweep", changed, changed > 0],
-    ["Open pipeline value", pipeline ? money(pipeline) : "—"],
+    ["Pipeline value (being pursued)", pipeline ? compactMoney(pipeline) : "—", false, pipeline ? `$${money(pipeline)} across ${worked.length} opportunit${worked.length === 1 ? "y" : "ies"} being qualified, pursued, drafted or submitted` : "Nothing with a stated value is being qualified, pursued or submitted yet"],
+    ["Published value, open RFPs", publishedValue ? compactMoney(publishedValue) : "—", false, `$${money(publishedValue)} stated by ${published.length} of ${open.length} open RFPs (buyers' estimates or ceilings, not qualified)`],
     ["Win rate", won + lost ? `${Math.round((won / (won + lost)) * 100)}%` : "—"],
   ];
-  $("#kpis").replaceChildren(...tiles.map(([l, v, warn]) => h("div", { class: `kpi${warn ? " warn" : ""}` }, h("div", { class: "v" }, v), h("div", { class: "l" }, l))));
+  $("#kpis").replaceChildren(...tiles.map(([l, v, warn, title]) => h("div", { class: `kpi${warn ? " warn" : ""}`, title: title ?? "" }, h("div", { class: "v" }, v), h("div", { class: "l" }, l))));
 }
 
 function filtered() {
@@ -397,6 +407,7 @@ function switchTab(tab) {
   for (const b of document.querySelectorAll(".main-tabs button")) b.classList.toggle("active", b.dataset.tab === tab);
   for (const s of document.querySelectorAll(".tab")) s.hidden = s.id !== `tab-${tab}`;
   const pipeline = ["findings", "actions"].includes(tab);
+  if (tab === "analyze") { state.exportCache = null; renderExport(); }
   for (const el of document.querySelectorAll(".pipeline-only")) el.hidden = !pipeline;
   render();
 }
@@ -892,6 +903,259 @@ function renderCompany() {
 }
 
 
+// =================================================================== Your template, references and export
+// The response template and the reference library are company-confidential: the local
+// dashboard keeps them in library/private/ (gitignored); the published page keeps them
+// in this browser (IndexedDB). Neither is ever uploaded or published.
+
+const idb = {
+  db: null,
+  open() {
+    if (this.db) return this.db;
+    this.db = new Promise((res, rej) => {
+      const r = indexedDB.open("rfp-sweep", 1);
+      r.onupgradeneeded = () => { for (const s of ["files", "references", "work"]) if (!r.result.objectStoreNames.contains(s)) r.result.createObjectStore(s); };
+      r.onsuccess = () => res(r.result);
+      r.onerror = () => rej(r.error);
+    });
+    return this.db;
+  },
+  // Resolves with the request's result (undefined when nothing is stored), never the request itself.
+  async tx(store, mode, fn) { const db = await this.open(); return new Promise((res, rej) => { const t = db.transaction(store, mode); const req = fn(t.objectStore(store)); t.oncomplete = () => res(req ? req.result : undefined); t.onerror = () => rej(t.error); }); },
+  get(store, key) { return this.tx(store, "readonly", (s) => s.get(key)); },
+  put(store, key, value) { return this.tx(store, "readwrite", (s) => s.put(value, key)); },
+  del(store, key) { return this.tx(store, "readwrite", (s) => s.delete(key)); },
+  async all(store) { const db = await this.open(); return new Promise((res, rej) => { const t = db.transaction(store, "readonly"); const r = t.objectStore(store).getAll(); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); },
+  async entries(store) { const db = await this.open(); return new Promise((res, rej) => { const out = {}; const r = db.transaction(store, "readonly").objectStore(store).openCursor(); r.onsuccess = () => { const c = r.result; if (c) { out[c.key] = c.value; c.continue(); } else res(out); }; r.onerror = () => rej(r.error); }); },
+};
+
+state.library = { template: null, references: [] };
+state.localWork = {};
+
+/** Load the template's details, the references and (published copy) the drafts kept in this browser. */
+async function loadLibrary() {
+  try {
+    if (STATIC) {
+      const t = await idb.get("files", "template");
+      state.library.template = t ? { name: t.name, type: t.type, size: t.size, uploadedAt: t.uploadedAt, tags: t.tags } : null;
+      const refs = await idb.all("references");
+      state.library.references = refs.map(({ passages, ...r }) => ({ ...r, passages: passages?.length ?? 0 }));
+      state.localWork = await idb.entries("work");
+      // Their passages join the knowledge the drafter cites (cited, never approved).
+      state.meta.knowledge = [...(state.meta.knowledge ?? []).filter((e) => e.kind !== "reference"), ...R().referenceKnowledge(refs)];
+    } else {
+      const j = await fetch("/api/library").then((r) => r.json());
+      state.library = { template: j.template, references: j.references };
+    }
+  } catch (e) { console.warn("library", e); }
+  renderLibrary();
+  renderExport();
+}
+
+async function refreshKnowledge() {
+  if (STATIC) return loadLibrary();
+  try { const m = await fetch("/api/meta").then((r) => r.json()); state.meta.knowledge = m.knowledge; } catch { /* keep */ }
+  await loadLibrary();
+}
+
+async function templateBuffer() {
+  if (!state.library.template) return null;
+  if (STATIC) { const t = await idb.get("files", "template"); return t ? { name: t.name, buffer: t.buffer } : null; }
+  const r = await fetch("/api/library/template");
+  return r.ok ? { name: state.library.template.name, buffer: await r.arrayBuffer() } : null;
+}
+
+async function loadExportLibs() {
+  await Promise.all([loadScript("vendor/pizzip.min.js"), loadScript("vendor/exceljs.min.js")]);
+  await loadScript("vendor/docxtemplater.min.js");
+  return { PizZip: window.PizZip, Docxtemplater: window.docxtemplater, ExcelJS: window.ExcelJS };
+}
+
+async function uploadTemplate(file) {
+  if (!file) return;
+  if (!/\.(docx|xlsx)$/i.test(file.name)) return toast("Upload a Word (.docx) or Excel (.xlsx) template.", true);
+  if (file.size > 10 * 1024 * 1024) return toast("That template is over 10 MB.", true);
+  try {
+    const buffer = await file.arrayBuffer();
+    const type = /\.xlsx$/i.test(file.name) ? "xlsx" : "docx";
+    let tags = [];
+    if (type === "docx") { const libs = await loadExportLibs(); tags = R().templateTags(libs.PizZip, buffer); }
+    const meta = { name: file.name, type, size: file.size, uploadedAt: new Date().toISOString(), tags };
+    if (STATIC) await idb.put("files", "template", { ...meta, buffer });
+    else {
+      const r = await fetch("/api/library/template", { method: "PUT", headers: { "X-RFP-Dashboard": "1", "x-file-name": file.name, "x-template-tags": tags.join(","), "content-type": "application/octet-stream" }, body: buffer });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error);
+    }
+    state.library.template = meta;
+    renderLibrary(); renderExport();
+    toast(`Template saved: ${file.name}. ${type === "xlsx" ? "Answers go into its Answer/Response column." : tags.length ? `${tags.length} tag(s) found; they are filled on export.` : "No {{tags}}: responses are added after its own content, in its heading styles."}`);
+  } catch (e) { toast(`Could not use that template: ${e.message}`, true); }
+}
+
+async function removeTemplate() {
+  try {
+    if (STATIC) await idb.del("files", "template");
+    else await fetch("/api/library/template", { method: "DELETE", headers: { "X-RFP-Dashboard": "1" } });
+    state.library.template = null;
+    renderLibrary(); renderExport();
+    toast("Template removed. Exports use the built-in Word layout.");
+  } catch (e) { toast(e.message, true); }
+}
+
+async function addReferences(linksText, files) {
+  const links = R().linksIn(linksText);
+  if (!links.length && !files.length) return toast("Paste at least one link, or choose a file.", true);
+  const btn = $("#libAdd");
+  if (btn) { btn.disabled = true; btn.textContent = "Reading…"; }
+  try {
+    const read = [];
+    for (const f of files) { try { read.push({ name: f.name, text: await readDocument(f) }); } catch (e) { read.push({ name: f.name, text: "", error: e.message }); } }
+    let added;
+    if (STATIC) {
+      added = [
+        ...links.map((u) => R().makeReference({ source: u, kind: "link", error: "This published page cannot read other websites (browser security). Save the page as a PDF or text file and add the file, or add the link in the local dashboard." })),
+        ...read.map((f) => R().makeReference({ source: f.name, kind: "file", text: f.text, error: f.error ? `Could not read it (${f.error}).` : null })),
+      ];
+      for (const r of added) await idb.put("references", r.id, r);
+      added = added.map(({ passages, ...r }) => ({ ...r, passages: passages.length }));
+    } else {
+      const r = await fetch("/api/library/references", { method: "POST", headers: { "X-RFP-Dashboard": "1", "content-type": "application/json" }, body: JSON.stringify({ links, files: read.filter((f) => !f.error) }) });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error);
+      added = [...j.added, ...read.filter((f) => f.error).map((f) => ({ source: f.name, kind: "file", passages: 0, error: `Could not read it (${f.error}).` }))];
+    }
+    await refreshKnowledge();
+    const ok = added.filter((x) => !x.error), bad = added.filter((x) => x.error);
+    toast(`${ok.length} reference(s) added: ${ok.reduce((n, x) => n + x.passages, 0)} passage(s) the drafter can cite.${bad.length ? ` ${bad.length} not read: ${bad[0].error}` : ""}`, !ok.length);
+  } catch (e) { toast(e.message, true); }
+  if (btn) { btn.disabled = false; btn.textContent = "Add to library"; }
+}
+
+async function removeReference(id) {
+  try {
+    if (STATIC) await idb.del("references", id);
+    else await fetch(`/api/library/references/${encodeURIComponent(id)}`, { method: "DELETE", headers: { "X-RFP-Dashboard": "1" } });
+    await refreshKnowledge();
+    toast("Reference removed.");
+  } catch (e) { toast(e.message, true); }
+}
+
+function renderLibrary() {
+  const box = $("#libraryCard");
+  if (!box || !state.meta) return;
+  const t = state.library.template, refs = state.library.references ?? [];
+  const tFile = h("input", { type: "file", id: "libTemplate", accept: ".docx,.xlsx", "aria-label": "Upload your response template" });
+  tFile.addEventListener("change", () => { uploadTemplate(tFile.files[0]); tFile.value = ""; });
+  const links = h("textarea", { id: "libLinks", placeholder: "https://www.yourcompany.com/solutions/fund-accounting\nhttps://www.yourcompany.com/case-studies/school-board-payroll\n(one link per line: articles about your offering, published case studies, past RFP responses)", "aria-label": "Links to reference articles and past RFP responses" });
+  const files = h("input", { type: "file", id: "libFiles", multiple: true, accept: ".pdf,.docx,.txt,.md,.html,.htm", "aria-label": "Past RFP responses and brochures" });
+  const where = STATIC ? "Kept in this browser only" : "Kept on this machine only (library/private/, not in git)";
+  box.replaceChildren(
+    h("h2", {}, "Your template and references"),
+    h("p", { class: "hint" }, `${where}: never uploaded, never published.`),
+    h("div", { class: "lib-grid" },
+      h("div", {},
+        h("h3", {}, "Response template"),
+        t ? h("p", { class: "lib-status" }, h("strong", {}, t.name), ` · ${t.type === "xlsx" ? "Excel" : "Word"} · ${Math.max(1, Math.round((t.size ?? 0) / 1024))} KB · ${String(t.uploadedAt ?? "").slice(0, 10)}`,
+          h("br"), h("span", { class: "hint" }, t.type === "xlsx" ? "Answers go into its Answer/Response column, next to each question." : t.tags?.length ? `Tags filled on export: ${t.tags.filter((x) => !/^\//.test(x)).slice(0, 12).join(", ")}` : "No {{tags}} found: the responses are added after its own content, in its heading styles."))
+          : h("p", { class: "hint" }, "No template yet: exports use the built-in Word layout."),
+        h("div", { class: "row" }, h("label", { class: "button keep" }, t ? "Replace template" : "Upload your template (.docx or .xlsx)", tFile),
+          h("button", { class: "keep", id: "libSample", onclick: async () => { const libs = await loadExportLibs(); downloadBlob("rfp-response-template.docx", new Blob([R().defaultTemplate(libs.PizZip)], { type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" })); toast("Sample template downloaded: edit it in Word, keep the {{tags}}, and upload it."); } }, "Download a sample template"),
+          t ? h("button", { class: "keep link", onclick: removeTemplate }, "Remove") : null),
+        h("details", {}, h("summary", {}, "Tags you can use in a Word template"),
+          h("table", { class: "facts" }, h("tbody", {}, ...R().TEMPLATE_TAGS.map(([tag, what]) => h("tr", {}, h("th", {}, h("code", {}, `{{${tag}}}`)), h("td", {}, what))))),
+          h("p", { class: "hint" }, "An Excel template needs a header row with a Question (or Requirement) column and an Answer (or Response) column; # / Section / Status / SME columns are filled too."))),
+      h("div", {},
+        h("h3", {}, "Reference articles and past RFP responses"),
+        links,
+        h("div", { class: "row" }, h("label", { class: "lbl" }, "…or add files (past responses, brochures): ", files),
+          h("button", { class: "primary", id: "libAdd", onclick: () => addReferences(links.value, [...files.files]).then(() => { links.value = ""; files.value = ""; }) }, "Add to library")),
+        h("p", { class: "hint" }, "Split into passages (question → answer for past responses, topics for articles). Drafts cite them and always go to an SME to confirm."),
+        refs.length ? h("ul", { class: "plain lib-refs" }, ...refs.map((r) => h("li", {},
+          r.kind === "link" && /^https?:/.test(r.source) ? h("a", { href: r.source, target: "_blank", rel: "noopener noreferrer" }, r.title || r.source) : h("strong", {}, r.title || r.source),
+          r.error ? h("span", { class: "hint err" }, ` · not read: ${r.error}`) : h("span", { class: "hint" }, ` · ${r.passages} passage(s) · ${String(r.addedAt ?? "").slice(0, 10)}`),
+          " ", h("button", { class: "keep link", "aria-label": `Remove ${r.title || r.source}`, onclick: () => removeReference(r.id) }, "Remove"))))
+          : h("p", { class: "empty" }, "No references yet."))));
+}
+
+const WORKED = ["Qualifying", "Pursuing", "Drafting"];
+state.exportFilter = "worked";
+state.exportPick = null;
+
+async function exportCandidates(tid) {
+  // Always the latest: drafts saved in a workspace since the page loaded count as saved drafts.
+  const ledger = STATIC ? localEdits.apply(await fetch(`data/${encodeURIComponent(tid)}.json`, { cache: "no-cache" }).then((r) => r.json())) : await fetch(`/api/ledger?tenant=${encodeURIComponent(tid)}`).then((r) => r.json());
+  const today = new Date().toISOString().slice(0, 10);
+  const want = state.exportFilter;
+  return (ledger.findings ?? []).filter((f) => want === "all" ? true : want === "submitted" ? f.status === "Submitted" : want === "open" ? OPEN.has(f.status ?? "New") && (!f.closeDate || f.closeDate >= today) : WORKED.includes(f.status))
+    .sort((a, b) => (a.closeDate ?? "9999").localeCompare(b.closeDate ?? "9999"));
+}
+
+async function renderExport() {
+  const box = $("#exportCard");
+  if (!box || !state.meta) return;
+  const tenants = state.meta.tenants ?? [];
+  const tid = state.exportTenant ?? state.tenant ?? tenants[0]?.id;
+  if (!tid) return box.replaceChildren(h("h2", {}, "Export RFP responses"), h("p", { class: "empty" }, "No pipeline yet."));
+  // Loaded once per pipeline and filter (the whole pipeline can be a few MB); ticking boxes reuses it.
+  const key = `${tid}|${state.exportFilter}`;
+  let list = state.exportCache?.key === key ? state.exportCache.list : null;
+  if (!list) {
+    try { list = await exportCandidates(tid); state.exportCache = { key, list }; }
+    catch (e) { return box.replaceChildren(h("h2", {}, "Export RFP responses"), h("p", { class: "empty" }, `Could not load the pipeline: ${e.message}`)); }
+  }
+  if (!state.exportPick || state.exportPick.tid !== tid || state.exportPick.filter !== state.exportFilter) state.exportPick = { tid, filter: state.exportFilter, ids: new Set(list.map((f) => f.id)) };
+  const pick = state.exportPick.ids;
+  const hasWork = (f) => !!(f.workspace?.answers ?? state.localWork?.[f.id]?.answers);
+  const t = state.library.template;
+  box.replaceChildren(
+    h("h2", {}, "Export RFP responses"),
+    h("p", { class: "hint" }, `Pick a pipeline and the opportunities; each gets its responses filled into ${t ? `your template (${t.name})` : "the built-in Word layout"}, in one .zip with a summary workbook. Saved drafts are used as they are; the rest are drafted now from your approved answers and references. Read in your browser; nothing is uploaded.`),
+    h("div", { class: "row" },
+      h("label", {}, "Pipeline ", h("select", { id: "xPipeline", onchange: (e) => { state.exportTenant = e.target.value; renderExport(); } }, ...tenants.map((x) => h("option", { value: x.id, selected: x.id === tid }, x.name)))),
+      h("label", {}, "Opportunities ", h("select", { id: "xStatus", onchange: (e) => { state.exportFilter = e.target.value; renderExport(); } },
+        ...[["worked", "Being worked (Qualifying, Pursuing, Drafting)"], ["submitted", "Submitted"], ["open", "All open, not past due"], ["all", "All"]].map(([v, l]) => h("option", { value: v, selected: v === state.exportFilter }, l)))),
+      h("label", { class: "check" }, h("input", { type: "checkbox", id: "xSummary", checked: true }), " Include a summary workbook")),
+    // replaceChildren does not flatten arrays (it would print "[object HTMLDivElement]"): spread them.
+    ...(list.length ? [
+      h("div", { class: "row" }, h("span", { class: "hint" }, `${pick.size} of ${list.length} selected`),
+        h("button", { class: "keep link", onclick: () => { list.forEach((f) => pick.add(f.id)); renderExport(); } }, "Select all"),
+        h("button", { class: "keep link", onclick: () => { pick.clear(); renderExport(); } }, "Select none")),
+      h("div", { class: "tablewrap export-list" }, h("table", { class: "grid" }, h("tbody", {}, ...list.slice(0, 300).map((f) => h("tr", {},
+        h("td", {}, h("input", { type: "checkbox", value: f.id, checked: pick.has(f.id), "aria-label": `Export ${f.title}`, onchange: (e) => { if (e.target.checked) pick.add(f.id); else pick.delete(f.id); renderExport(); } })),
+        h("td", { class: "title" }, f.title, h("div", { class: "buyer" }, f.buyer || "")),
+        h("td", {}, f.closeDate ?? "—"), h("td", {}, f.status ?? "New"),
+        h("td", {}, hasWork(f) ? h("span", { class: "tag" }, "saved draft") : h("span", { class: "tag muted" }, "drafted at export"))))))),
+      h("div", { class: "row" }, h("button", { class: "primary", id: "xRun", disabled: !pick.size, onclick: () => exportRfpResponses(tid, list.filter((f) => pick.has(f.id))) }, `Export ${pick.size} response${pick.size === 1 ? "" : "s"} (.zip)`)),
+    ] : [h("p", { class: "empty" }, state.exportFilter === "worked" ? "No opportunity is being qualified, pursued or drafted in this pipeline yet. Choose All open, or mark some Pursue first." : "No opportunities match.")]));
+}
+
+/** Saved drafts where they exist; otherwise draft now from what the sweep read and the knowledge base. */
+function answersFor(f) {
+  const work = f.workspace ?? state.localWork?.[f.id] ?? null;
+  if (work?.answers?.length) return { answers: work.answers, proposal: work.proposal ?? "" };
+  const analysis = R().analyzeRfp({ text: f.sourceText || f.title, title: f.title, source: f.url ?? "", packs: state.meta.packs, profile: state.profile, buyer: f.buyer, now: new Date(), closeDate: f.closeDate, known: f.rfp ?? null });
+  const answers = R().draftAnswers(analysis.requirements, state.meta.knowledge, { matrix: state.meta.matrix, buyer: f.buyer ?? "" });
+  const proposal = R().buildProposal(analysis, answers, { text: f.sourceText ?? "", buyer: f.buyer ?? "", companyName: state.profile?.name ?? "", profile: state.profile?.summary ? { summary: `${state.profile.name}, from its website: ${state.profile.summary}` } : {} });
+  return { answers: answers.length ? answers : [{ reqId: "", section: "", requirement: "No requirements or questions were found in what the sweep read.", draft: "[SME validation required] Load the RFP document in the workspace to draft each answer.", status: "Not started", owner: "RFP Manager", confidence: "low", level: "mandatory" }], proposal };
+}
+
+async function exportRfpResponses(tid, chosen) {
+  if (!chosen.length) return toast("Select at least one opportunity.", true);
+  const btn = $("#xRun");
+  if (btn) { btn.disabled = true; btn.textContent = "Exporting…"; }
+  try {
+    const libs = await loadExportLibs();
+    const template = await templateBuffer();
+    const items = chosen.map((f) => { const { answers, proposal } = answersFor(f); return { finding: f, data: R().responseData(f, { answers, proposal, company: state.profile?.name ?? "" }) }; });
+    const name = state.meta.tenants.find((x) => x.id === tid)?.name ?? tid;
+    const r = await R().exportResponses(libs, items, { template, pipeline: name, includeSummary: $("#xSummary")?.checked !== false });
+    downloadBlob(`rfp-responses-${slug(name)}-${new Date().toISOString().slice(0, 10)}.zip`, new Blob([r.bytes], { type: "application/zip" }));
+    toast(`Exported ${items.length} response${items.length === 1 ? "" : "s"} into ${template ? template.name : "the built-in Word layout"}: ${r.files.length} file(s)${$("#xSummary")?.checked !== false ? " and a summary workbook" : ""}.`);
+  } catch (e) { toast(`Export failed: ${e.message}`, true); }
+  if (btn) { btn.disabled = false; btn.textContent = `Export ${chosen.length} response${chosen.length === 1 ? "" : "s"} (.zip)`; }
+}
+
 // =================================================================== Configuration
 // Who can open the private host (work email + one of the four roles, no names), and
 // the sales-platform link through MCP. Edited in the local dashboard; both files stay
@@ -1040,7 +1304,7 @@ const STEPS = [["qualify", "Qualify"], ["assign", "Assign"], ["analyze", "Analyz
 const WS_TABS = [["overview", "Overview"], ["requirements", "Requirements"], ["risks", "Risks"], ["team", "Team"], ["responses", "Responses"], ["proofread", "Proofread"], ["proposal", "Proposal"], ["submission", "Submission status"]];
 
 function openWorkspace(f, target) {
-  const saved = f.workspace ?? {};
+  const saved = f.workspace ?? (STATIC ? state.localWork?.[f.id] : null) ?? {};
   state.ws = {
     target, finding: f, title: f.title, buyer: f.buyer, url: f.url, text: f.sourceText || "", proposalText: "",
     analysis: saved.analysis ?? null, answers: saved.answers ?? null, proposal: saved.proposal ?? null, proofread: saved.proofread ?? null, redTeam: saved.redTeam ?? null,
@@ -1158,6 +1422,13 @@ function runSubmission(ws) {
 
 let persistTimer;
 function persist(ws, what) {
+  if (STATIC && ws.finding && !ws.finding.raw) {
+    // Published copy: keep the drafts in this browser (IndexedDB) so they survive a reload and reach the export.
+    const work = { analysis: ws.analysis, answers: ws.answers, proposal: ws.proposal, proofread: ws.proofread, redTeam: ws.redTeam, teamOverride: ws.team, documentName: ws.documentName, savedAt: new Date().toISOString() };
+    state.localWork[ws.finding.id] = work;
+    idb.put("work", ws.finding.id, work).catch(() => toast("This browser would not keep the draft (storage full or blocked).", true));
+    return;
+  }
   if (STATIC || !ws.finding || ws.finding.raw || ws.finding.channel === undefined) return;
   clearTimeout(persistTimer);
   persistTimer = setTimeout(async () => {
@@ -1443,7 +1714,7 @@ function wsTab(ws) {
         a.compliance ? null : h("p", { class: "hint mt" }, "To screen compliance, load your draft proposal in Analyze a document."));
     case "responses":
       if (!a.requirements.length) return noRequirements(ws, "responses");
-      if (!ws.answers) return h("div", {}, h("p", { class: "empty" }, "Press Draft response. Answers come only from the approved knowledge base (library/knowledge.json); anything without an approved source is marked SME validation required."), h("button", { class: "primary keep", onclick: () => { runDraft(ws); renderWorkspace(ws); } }, "Draft response"));
+      if (!ws.answers) return h("div", {}, h("p", { class: "empty" }, "Press Draft response. Answers come from your approved answers, and from your reference library (Analyze a document tab) with the source cited; anything not approved is marked SME validation required."), h("button", { class: "primary keep", onclick: () => { runDraft(ws); renderWorkspace(ws); } }, "Draft response"));
       return h("div", {}, h("div", { class: "row sme-row" },
           h("button", { class: "keep", onclick: () => exportSmeReview(ws) }, "Export SME review (.xlsx)"),
           h("label", { class: "button keep" }, "Import SME review", (() => { const i = h("input", { type: "file", accept: ".xlsx", hidden: true }); i.addEventListener("change", () => importSmeReview(ws, i)); return i; })()),
@@ -1457,7 +1728,7 @@ function wsTab(ws) {
           return h("tr", {},
             h("td", {}, h("strong", {}, x.reqId), x.level === "mandatory" ? h("span", { class: "tag" }, "mandatory") : null, h("div", { class: "buyer" }, reqById[x.reqId]?.text ?? "")),
             h("td", {}, ta),
-            h("td", {}, x.sources.length ? x.sources.map((s) => h("div", { class: s.stale ? "stale" : "" }, `${s.id} (${s.similarity})${s.stale ? " STALE" : ""}`)) : h("span", { class: "hint" }, "none")),
+            h("td", {}, x.sources.length ? x.sources.map((s) => h("div", { class: s.stale ? "stale" : "" }, s.kind === "reference" ? `Reference: ${s.title} (${s.similarity})` : `${s.id} (${s.similarity})${s.stale ? " STALE" : ""}`)) : h("span", { class: "hint" }, "none")),
             h("td", {}, h("span", { class: `status conf-${x.confidence}` }, x.confidence), x.validationRequired ? h("div", { class: "hint" }, "SME validation") : null),
             h("td", {}, x.owner, x.smeNotes ? h("div", { class: "hint" }, `SME: ${x.smeNotes}`) : null), h("td", {}, st));
         })))));

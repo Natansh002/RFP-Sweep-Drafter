@@ -181,6 +181,7 @@ const jg = extractPostings({ id: "ca.on.ontariotenders", format: "jaggaer-html",
 a("feed: Ontario Tenders row parsed with dd/mm dates", jg.postings[0].buyer === "OECM" && jg.postings[0].publishedDate === "2026-08-04" && jg.postings[0].closeDate === "2026-10-23");
 const k12p = loadPack("k12");
 a("K-12 pack lists the reviewed sources in order", ["ca.agg.merx", "ca.agg.biddingo", "ca.mash.bidsandtenders", "ca.ab.apc", "ca.bc.bcbid", "coop.oecm", "ca.on.ontariotenders"].every((id, i) => k12p.channels[i].ref === id) && k12p.directSites.alwaysSweep);
+a("K-12: RFP School Watch is listed to check with a subscription, never read (subscriber-only, terms forbid commercial copying)", k12p.channels[7].ref === "ca.agg.rfpschoolwatch" && (await import("../lib/config.mjs")).loadRegistry().channels.find((c) => c.id === "ca.agg.rfpschoolwatch").requiresAccount === true);
 const boards = JSON.parse(fs.readFileSync(new URL("../data/k12-board-sites.json", import.meta.url), "utf8")).entries;
 a("board portal list: every entry verified and public", boards.length >= 25 && boards.every((b) => b.procurementUrl.startsWith("https://") && b.verified && b.segment === "k12"));
 

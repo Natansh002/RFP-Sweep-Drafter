@@ -56,6 +56,28 @@ finished review into reusable answers that stay on your machine.
 model, and every output says so. It is deterministic, explains each score, and
 never fabricates a reference, certification, capability or metric.
 
+## Your template, references and export
+
+On the **Analyze a document** tab:
+
+- **Response template.** Upload your own Word (.docx) or Excel (.xlsx) template. A Word template can use
+  tags such as `{{title}}`, `{{buyer}}`, `{{closeDate}}`, `{{executiveSummary}}` and a
+  `{{#responses}}{{reqId}} {{requirement}} {{answer}}{{/responses}}` loop; a Word template without tags
+  gets the responses added after its own content, in its heading styles (letterhead, headers and footers
+  stay). An Excel template is filled through its Question/Requirement and Answer/Response columns, and a
+  buyer's questionnaire has each of its questions answered with the closest drafted response.
+  **Download a sample template** to start from.
+- **Reference articles and past RFP responses.** Paste links (one per line) and add files. Past responses
+  are split into question → answer pairs, articles into topics. Drafts cite them by name and always go to
+  an SME to confirm: a reference is never treated as an approved answer.
+- **Export RFP responses.** Pick a pipeline and the opportunities (being worked, submitted, all open), and
+  get one filled document per opportunity plus a summary workbook, in a .zip. Saved drafts are used as they
+  are; the rest are drafted at export from your approved answers and references.
+
+The template and references stay private: in `library/private/` on your machine (local dashboard) or in
+your browser (published page). They are never uploaded or published. The published page cannot read other
+websites, so there links are listed but not read: add the file instead, or use the local dashboard.
+
 ## Configuration
 
 The **Configuration** tab (local dashboard) holds two things:
@@ -194,6 +216,8 @@ a findings `.xlsx` and a run `.json`. Import the `.json` with the dashboard's
 
 ## Honest limits
 
+- **Subscription aggregators** (Biddingo, RFP School Watch for Canadian K-12) show open bids only to
+  subscribers, and their terms forbid commercial copying, so they are listed for people to check, never read.
 - **Client-rendered portals** (BC Bid, APC, SaskTenders, SEAO, Ontario Tenders, MERX, bids&tenders, Biddingo) return an empty shell to a plain fetch and are reported as `needs-browser`. On the first live run, most K-12 and nonprofit portals fell into this category or refused the fetch, and that run found no real postings. A browser step is still the biggest yield improvement available. The direct watch-list sweep (`--direct`) and posting-page enrichment are the next best.
 - **Extraction is deliberately generic.** It harvests links and lets the scorer decide. Postings found only as links score mostly on unknowns until their page is read.
 - **The two logistics packs are unvalidated.** Their first two sweeps are calibration.
