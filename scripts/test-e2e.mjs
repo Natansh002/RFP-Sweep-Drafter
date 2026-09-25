@@ -792,9 +792,10 @@ Built on Microsoft Dynamics 365 Business Central with Power BI reporting.`;
     expect(/Scoring for\s*Harborline Systems/.test(card), "profile name not shown");
     for (const k of ["ERP / Finance", "HR / HCM", "Business Central", "Who you serve"]) expect(card.includes(k), `profile missing ${k}`);
     if (!isStatic) expect(JSON.parse(fs.readFileSync(path.join(STORE, "profile.json"), "utf8")).name === "Harborline Systems", "profile not saved on the server");
+    // A new profile opens in the editor, to check; keep it as read.
+    await page.click("#peSave"); await seenToast(page, /Profile saved for Harborline Systems/);
   });
   await check(P("company: results are scored on the offering and filtered to what is relevant"), async () => {
-    await page.click("#companyCard button:has-text('Done')").catch(() => {});
     await page.waitForTimeout(200);
     expect(!/(^|\s)(null|undefined)(\s|$)/.test(await page.locator("#companyCard").innerText()), "the company card shows a stray value after Done");
     await page.selectOption("#sStatus", "all"); await page.dispatchEvent("#sStatus", "change"); await page.waitForTimeout(300);
@@ -838,10 +839,42 @@ Built on Microsoft Dynamics 365 Business Central with Power BI reporting.`;
     await page.reload(); await page.waitForSelector("#sRun"); await page.waitForTimeout(800);
     expect(/off/.test(await page.locator("#companyCard .chip", { hasText: "HR / HCM" }).first().getAttribute("class")), "chip state not kept");
   });
+  await check(P("company: Edit profile changes the name, description, who you serve, platforms and terms by hand"), async () => {
+    await page.click("#pEdit");
+    await page.fill("#peName", "Harborline");
+    await page.fill("#peSummary", "Harborline builds fund accounting and payroll software for school boards.");
+    await page.selectOption("#peAddInd", "higher-ed");
+    await page.selectOption("#peAddPlat", "Workday");
+    await page.fill("#peOtherPlat", "Sage 300"); await page.click("#peAddOther");
+    await page.fill("#peTerms", "fund accounting, position control\ngrant management");
+    await page.click("#peSave");
+    await seenToast(page, /Profile saved for Harborline\./);
+    const summary = await page.locator("#coSummary").textContent();
+    expect(/^Harborline sells /.test(summary) && /higher education/.test(summary) && /In its own words: "Harborline builds fund accounting and payroll software for school boards\."/.test(summary), `summary: ${summary}`);
+    const card = await page.locator("#companyCard").textContent();
+    expect(card.includes("grant management") && card.includes("Workday") && card.includes("Sage 300") && /edited by you/.test(card), "edits not shown");
+    await page.click("#pEdit"); await page.fill("#peName", "Something Else"); await page.click("#peCancel");
+    await seenToast(page, /Changes discarded/);
+    expect(/Scoring for\s*Harborline/.test(await page.locator("#companyCard").textContent()), "cancel did not discard");
+  });
+  if (isStatic) {
+    await check(P("company: change the website in Edit profile and read it again; the editor stays open with what the new site says"), async () => {
+      readerMode = "up";
+      await page.click("#pEdit");
+      // A different website starts fresh: the hand-edited name ("Harborline") gives way to what the new site says.
+      await page.fill("#peWebsite", "https://www.newco.example/");
+      await page.click("#peRead");
+      await seenToast(page, /Read 1 page\(s\) of Harborline Systems\. Adjust anything below, then Save profile/);
+      expect(await page.locator("#peSave").count() === 1 && (await page.inputValue("#peName")) === "Harborline Systems", "editor not open with the new site's profile");
+      await page.click("#peSave"); await seenToast(page, /Profile saved/);
+      expect(/newco\.example/.test(await page.locator("#companyCard .company-head").textContent()), "website not changed");
+      readerMode = "down";
+    });
+  }
   await check(P("company: edit terms and save, then remove the profile"), async () => {
-    await page.locator("#companyCard button", { hasText: "Edit profile" }).click();
-    await page.fill("#companyCard .kw-input", "fund accounting, position control, grant management");
-    await page.locator("#companyCard button", { hasText: "Save profile" }).click();
+    await page.click("#pEdit");
+    await page.fill("#peTerms", "fund accounting, position control, grant management");
+    await page.click("#peSave");
     await seenToast(page, /Profile saved/);
     expect((await page.locator("#companyCard").textContent()).includes("grant management"), "terms not saved");
     await page.locator("#companyCard button", { hasText: "Remove" }).click(); await page.waitForTimeout(400);

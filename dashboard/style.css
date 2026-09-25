@@ -396,3 +396,21 @@ th button.sort.on .arrow { color: var(--accent); }
 .roles-note .hint { margin: 0; }
 .tag.role-tag { color: var(--review); border-color: var(--review); }
 .tag.live-tag { color: var(--pursue); border-color: var(--pursue); }
+
+/* Edit profile */
+.profile-editor { margin-top: 10px; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg); }
+.profile-editor h3 { margin: 0 0 8px; font-size: 15px; }
+.pe-row { display: grid; gap: 4px; margin: 8px 0 12px; }
+.pe-row > label { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.pe-row .row { display: flex; flex-wrap: wrap; gap: 8px; }
+.pe-row input[type=url], .pe-row input, .pe-row textarea { width: 100%; }
+.pe-row .row input[type=url] { flex: 1 1 280px; width: auto; }
+.pe-row .hint, .pe-grid .hint { margin: 2px 0 0; font-size: 12.5px; }
+.pe-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px 22px; }
+.pe-grid h4 { margin: 0 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.pe-grid h4.mt { margin-top: 12px; }
+.pe-grid textarea, .pe-grid input:not([type=checkbox]) { width: 100%; }
+.pe-grid .row { display: flex; gap: 6px; margin-top: 6px; }
+.chip-wrap { display: inline-flex; align-items: center; }
+.chip-x { padding: 0 4px; font-size: 16px; line-height: 1; }
+.pe-actions { display: flex; gap: 8px; margin-top: 14px; }

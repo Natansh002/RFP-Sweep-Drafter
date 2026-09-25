@@ -1111,21 +1111,26 @@ async function buildFromWebsiteStatic(home) {
   return profile;
 }
 
-async function buildFromWebsite(url) {
+async function buildFromWebsite(url, { fromEdit = false } = {}) {
   if (!url) return toast("Enter your company's website first.", true);
   const home = /^https?:\/\//i.test(url) ? url : `https://${url}`;
-  const btn = $("#pBuild");
-  if (btn) { btn.disabled = true; btn.textContent = "Reading your website…"; }
+  const old = state.profile, sameSite = !!old?.website && hostOf(old.website) === hostOf(home);
+  const btn = $("#pBuild") ?? $("#peRead");
+  if (btn) { btn.disabled = true; btn.textContent = "Reading the website…"; }
+  const finish = async (profile) => {
+    if (old && sameSite) profile = mergeManualEdits(profile, old);
+    else if (old?.website) await dropReferencesFrom(hostOf(old.website));
+    await saveProfile(profile); state.postings = null; await loadPostings();
+    await refreshKnowledge();
+    state.profileFallback = false; state.pendingWebsite = null;
+    state.profileEditing = fromEdit; state.profileDraft = fromEdit ? structuredClone(profile) : null;
+    toast(`Read ${profile.pagesRead?.length ?? 1} page(s) of ${profile.name}.${old && sameSite && old.edited ? " Your own changes were kept." : ""} ${fromEdit ? "Adjust anything below, then Save profile." : "Check the summary below and switch off anything that is wrong."}`);
+  };
   if (STATIC) {
-    try {
-      const profile = await buildFromWebsiteStatic(home);
-      await saveProfile(profile); state.postings = null; await loadPostings();
-      await refreshKnowledge();
-      state.profileEditing = false; state.profileFallback = false; state.pendingWebsite = null;
-      toast(`Read ${profile.pagesRead.length} page(s) of ${profile.name}. Check the summary below and switch off anything that is wrong.`);
-    } catch (e) {
-      state.profileFallback = true; state.pendingWebsite = home;
-      toast(`Could not read the website: ${e.message}. Paste its text or upload a brochure instead.`, true);
+    try { await finish(await buildFromWebsiteStatic(home)); }
+    catch (e) {
+      if (fromEdit) toast(`Could not read the website: ${e.message}. Your profile is unchanged.`, true);
+      else { state.profileFallback = true; state.pendingWebsite = home; toast(`Could not read the website: ${e.message}. Paste its text or upload a brochure instead.`, true); }
     }
     renderCompany(); renderSweepResults();
     return;
@@ -1134,13 +1139,10 @@ async function buildFromWebsite(url) {
     const r = await fetch("/api/profile/build", { method: "POST", headers: { "X-RFP-Dashboard": "1", "content-type": "application/json" }, body: JSON.stringify({ url: home }) });
     const profile = await r.json();
     if (!r.ok) throw new Error(profile.error);
-    state.profile = profile; state.postings = null; await loadPostings();
-    await refreshKnowledge(); // the server added the website's pages to the reference library
-    state.profileEditing = true;
-    toast(`Read ${profile.pagesRead?.length ?? 1} page(s) of ${profile.name}: ${profile.capabilities.length} capabilit${profile.capabilities.length === 1 ? "y" : "ies"}, ${profile.industries.length} industr${profile.industries.length === 1 ? "y" : "ies"}. Review it below.`);
+    await finish(profile); // the server also added the website's pages to the reference library
   } catch (e) {
-    state.profileFallback = true; state.pendingWebsite = home;
-    toast(`${e.message}. Paste the text of your website or upload a brochure instead.`, true);
+    if (fromEdit) toast(`${e.message}. Your profile is unchanged.`, true);
+    else { state.profileFallback = true; state.pendingWebsite = home; toast(`${e.message}. Paste the text of your website or upload a brochure instead.`, true); }
   }
   renderCompany(); renderSweepResults();
 }
@@ -1166,7 +1168,7 @@ async function buildFromText(text, name, website) {
   state.pendingWebsite = null;
   await saveProfile(profile); await loadPostings();
   await addProfileReference(text, profile.name);
-  state.profileEditing = true; state.profileFallback = false;
+  state.profileEditing = true; state.profileDraft = structuredClone(profile); state.profileFallback = false;
   toast(`Profile built: ${profile.capabilities.length} capabilit${profile.capabilities.length === 1 ? "y" : "ies"}, ${profile.industries.length} industr${profile.industries.length === 1 ? "y" : "ies"}`);
   renderCompany(); renderSweepResults();
 }
@@ -1199,33 +1201,114 @@ function renderCompany() {
         name, text, h("div", { class: "row" }, file, h("button", { id: "pBuildText", class: state.profileFallback ? "primary" : "keep", onclick: () => buildFromText(text.value, name.value.trim(), url.value.trim()) }, "Build profile from text"))));
     return;
   }
-  // A chip toggle or an added capability is saved at once; terms and name on "Save profile".
+  if (state.profileEditing) return renderProfileEditor(box);
+  // In the view, a chip toggle is saved at once; everything else is changed in Edit profile.
   const rerender = async () => { await saveProfile(p); renderCompany(); renderSweepResults(); };
-  const kw = h("input", { class: "kw-input", value: (p.keywords ?? []).join(", "), "aria-label": "Your terms" });
-  const nm = h("input", { class: "name-input", value: p.name ?? "", "aria-label": "Company name" });
-  const editing = !!state.profileEditing;
   box.replaceChildren(
-    h("div", { class: "company-head" },
-      h("div", {}, h("h2", {}, "Scoring for ", h("span", { class: "co-name" }, p.name)),
-        h("div", { class: "hint" }, p.website ? h("a", { href: p.website, target: "_blank", rel: "noopener noreferrer" }, p.website.replace(/^https?:\/\//, "")) : "from pasted text",
-          ` · ${p.pagesRead?.length ? `${p.pagesRead.length} page(s) read` : `${p.words ?? 0} words`} · inferred from ${p.source === "pasted text" ? "your text" : "your website"}; review before relying on it`)),
-      h("div", { class: "row" },
-        h("label", { class: "check" }, h("input", { type: "checkbox", id: "pRelevant", checked: state.relevantOnly, onchange: (e) => { state.relevantOnly = e.target.checked; try { localStorage.setItem("rfp.relevantOnly", e.target.checked ? "1" : "0"); } catch { /* ignore */ } renderSweepResults(); } }), " Show only RFPs relevant to us"),
-        h("button", { class: "keep", onclick: () => { state.profileEditing = !editing; renderCompany(); } }, editing ? "Done" : "Edit profile"),
-        p.website && !STATIC ? h("button", { class: "keep", onclick: () => buildFromWebsite(p.website) }, "Re-read website") : null,
-        h("button", { class: "keep link", onclick: () => { if (confirm("Remove this company profile?")) clearProfile(); } }, "Remove"))),
+    profileHeader(p, false),
     h("div", { class: "co-understood" }, h("h4", {}, "What we understood"), h("p", { class: "co-summary", id: "coSummary" }, R().profileSummary(p)),
-      p.pagesRead?.length ? h("details", {}, h("summary", {}, `Pages read (${p.pagesRead.length})`), h("ul", { class: "plain" }, ...p.pagesRead.map((u) => h("li", {}, h("a", { href: u, target: "_blank", rel: "noopener noreferrer" }, u.replace(/^https?:\/\//, "")))))) : null),
+      ...(p.pagesRead?.length ? [h("details", {}, h("summary", {}, `Pages read (${p.pagesRead.length})`), h("ul", { class: "plain" }, ...p.pagesRead.map((u) => h("li", {}, h("a", { href: u, target: "_blank", rel: "noopener noreferrer" }, u.replace(/^https?:\/\//, ""))))))] : [])),
     h("div", { class: "co-grid" },
-      h("div", {}, h("h4", {}, "What you sell"), h("div", { class: "chips" }, ...(p.capabilities.length ? p.capabilities.map((c) => chip(c, c.label, rerender)) : [h("span", { class: "hint" }, "No capability recognised. Add your terms below.")]),
-        editing ? h("select", { class: "add-cap", "aria-label": "Add a capability", onchange: (e) => { const c = state.meta.capabilities.find((x) => x.id === e.target.value); if (c && !p.capabilities.some((x) => x.id === c.id)) p.capabilities.push({ id: c.id, label: c.label, strength: 0, evidence: ["added by you"], on: true }); rerender(); } },
-          h("option", { value: "" }, "＋ Add capability"), ...state.meta.capabilities.filter((c) => !p.capabilities.some((x) => x.id === c.id)).map((c) => h("option", { value: c.id }, c.label))) : null)),
-      h("div", {}, h("h4", { title: "Read from your website for context. Fit is scored on what you sell, not on the buyer's industry." }, "Who you serve (context)"), h("div", { class: "chips" }, ...(p.industries.length ? p.industries.map((i) => h("span", { class: "tag", title: i.evidence?.length ? `From your site: ${i.evidence.join(", ")}` : "" }, i.label)) : [h("span", { class: "hint" }, "None named on the site.")]))),
+      h("div", {}, h("h4", {}, "What you sell"), h("div", { class: "chips" }, ...(p.capabilities.length ? p.capabilities.map((c) => chip(c, c.label, rerender)) : [h("span", { class: "hint" }, "No capability recognised. Add one in Edit profile.")]))),
+      h("div", {}, h("h4", { title: "For context. Fit is scored on what you sell, not on the buyer's industry." }, "Who you serve (context)"), h("div", { class: "chips" }, ...(p.industries.length ? p.industries.map((i) => chip(i, i.label, rerender)) : [h("span", { class: "hint" }, "None named.")]))),
       h("div", {}, h("h4", {}, "Platforms"), h("div", { class: "chips" }, ...(p.platforms.length ? p.platforms.map((x) => chip(x, x.name, rerender)) : [h("span", { class: "hint" }, "None named.")]))),
-      h("div", { class: "co-terms" }, h("h4", {}, "Your terms"), editing ? [kw, h("div", { class: "hint" }, "Comma-separated. RFPs using these words score higher.")] : h("div", { class: "chips" }, ...(p.keywords ?? []).slice(0, 14).map((k) => h("span", { class: "tag" }, k))))),
-    ...(editing ? [h("div", { class: "row" }, h("label", {}, "Name ", nm), h("button", { class: "primary", onclick: async () => { p.keywords = kw.value.split(",").map((x) => x.trim()).filter(Boolean); p.name = nm.value.trim() || p.name; state.profileEditing = false; await rerender(); toast("Profile saved. Every RFP is re-scored against it."); } }, "Save profile"))] : []));
+      h("div", { class: "co-terms" }, h("h4", {}, "Your terms"), h("div", { class: "chips" }, ...((p.keywords ?? []).length ? (p.keywords ?? []).slice(0, 16).map((k) => h("span", { class: "tag" }, k)) : [h("span", { class: "hint" }, "None yet.")])))));
 }
 
+/** The card's header: whose profile, from where, and its buttons. */
+function profileHeader(p, editing) {
+  return h("div", { class: "company-head" },
+    h("div", {}, h("h2", {}, "Scoring for ", h("span", { class: "co-name" }, p.name)),
+      h("div", { class: "hint" }, p.website ? h("a", { href: p.website, target: "_blank", rel: "noopener noreferrer" }, p.website.replace(/^https?:\/\//, "")) : "from pasted text",
+        ` · ${p.pagesRead?.length ? `${p.pagesRead.length} page(s) read` : `${p.words ?? 0} words`} · ${p.edited && Object.keys(p.edited).length ? "read from your website, then edited by you" : `inferred from ${p.source === "pasted text" ? "your text" : "your website"}; review before relying on it`}`)),
+    h("div", { class: "row" },
+      h("label", { class: "check" }, h("input", { type: "checkbox", id: "pRelevant", checked: state.relevantOnly, onchange: (e) => { state.relevantOnly = e.target.checked; try { localStorage.setItem("rfp.relevantOnly", e.target.checked ? "1" : "0"); } catch { /* ignore */ } renderSweepResults(); } }), " Show only RFPs relevant to us"),
+      ...(editing ? [] : [h("button", { class: "keep", id: "pEdit", onclick: () => { state.profileDraft = structuredClone(state.profile); state.profileEditing = true; renderCompany(); } }, "Edit profile")]),
+      h("button", { class: "keep link", onclick: () => { if (confirm("Remove this company profile?")) clearProfile(); } }, "Remove")));
+}
+
+/**
+ * Edit profile: every part can be changed by hand, and the website can be changed and read
+ * again. Work happens on a draft; Save profile keeps it, Cancel throws it away.
+ */
+function renderProfileEditor(box) {
+  const saved = state.profile;
+  const d = state.profileDraft ?? (state.profileDraft = structuredClone(saved));
+  const redraw = () => renderCompany();
+  const field = (tag, attrs, key, parse = (v) => v) => { const el = h(tag, attrs); el.addEventListener("input", () => { d[key] = parse(el.value); }); return el; };
+  const list = (v) => String(v).split(/[,\n]/).map((x) => x.trim()).filter(Boolean);
+  const website = h("input", { id: "peWebsite", type: "url", value: d.website ?? "", placeholder: "https://www.yourcompany.com", "aria-label": "Company website" });
+  const readSite = () => { const u = website.value.trim(); if (!u) return toast("Enter the website to read.", true); buildFromWebsite(u, { fromEdit: true }); };
+  website.addEventListener("keydown", (e) => { if (e.key === "Enter") readSite(); });
+  const caps = d.capabilities, inds = d.industries, plats = d.platforms;
+  const removable = (item, label, arr) => h("span", { class: "chip-wrap" }, chip(item, label, redraw),
+    item.evidence?.includes("added by you") || item.custom ? h("button", { class: "keep link chip-x", "aria-label": `Remove ${label}`, onclick: () => { arr.splice(arr.indexOf(item), 1); redraw(); } }, "×") : null);
+  const select = (id, label, options, onPick) => h("select", { id, class: "add-cap", "aria-label": label, onchange: (e) => { if (e.target.value) { onPick(e.target.value); redraw(); } } }, h("option", { value: "" }, `＋ ${label}`), ...options.map(([v, l]) => h("option", { value: v }, l)));
+  const other = h("input", { id: "peOtherPlat", placeholder: "another platform", "aria-label": "Another platform" });
+  const addOther = () => { const n = other.value.trim(); if (!n) return; if (!plats.some((x) => x.name.toLowerCase() === n.toLowerCase())) plats.push({ name: n, mentions: 0, on: true, custom: true }); redraw(); };
+  other.addEventListener("keydown", (e) => { if (e.key === "Enter") addOther(); });
+  box.replaceChildren(
+    profileHeader(saved, true),
+    h("div", { class: "profile-editor" },
+      h("h3", {}, "Edit your company profile"),
+      h("div", { class: "pe-row" }, h("label", { for: "peWebsite" }, "Website"), h("div", { class: "row" }, website, h("button", { class: "keep", id: "peRead", onclick: readSite }, d.website ? "Read this website again" : "Read this website")),
+        h("p", { class: "hint" }, "Reading picks up what the site says about what you sell. The same website keeps the changes you made here; a new one starts fresh.")),
+      h("div", { class: "pe-row" }, h("label", { for: "peName" }, "Company name"), field("input", { id: "peName", value: d.name ?? "" }, "name")),
+      h("div", { class: "pe-row" }, h("label", { for: "peSummary" }, "In your own words"), field("textarea", { id: "peSummary", rows: 3, value: d.summary ?? "" }, "summary"),
+        h("p", { class: "hint" }, "What you do and for whom, in a sentence or two. It goes into the summary, proposals and the About section of exported responses.")),
+      h("div", { class: "pe-grid" },
+        h("div", { class: "pe-caps" }, h("h4", {}, "What you sell"), h("div", { class: "chips" }, ...caps.map((c) => removable(c, c.label, caps)),
+          select("peAddCap", "Add capability", state.meta.capabilities.filter((c) => !caps.some((x) => x.id === c.id)).map((c) => [c.id, c.label]), (id) => { const c = state.meta.capabilities.find((x) => x.id === id); caps.push({ id: c.id, label: c.label, strength: 0, evidence: ["added by you"], on: true }); })),
+          h("p", { class: "hint" }, "Fit is scored on these: an RFP whose title asks for one of them is a strong fit.")),
+        h("div", { class: "pe-inds" }, h("h4", {}, "Who you serve"), h("div", { class: "chips" }, ...inds.map((i) => removable(i, i.label, inds)),
+          select("peAddInd", "Add who you serve", R().SERVES.filter((x) => !inds.some((i) => i.id === x.id)).map((x) => [x.id, x.label]), (id) => { const x = R().SERVES.find((y) => y.id === id); inds.push({ id: x.id, label: x.label, mentions: 0, evidence: ["added by you"], on: true }); })),
+          h("p", { class: "hint" }, "For context and the summary; fit does not use it.")),
+        h("div", { class: "pe-plats" }, h("h4", {}, "Platforms"), h("div", { class: "chips" }, ...plats.map((x) => removable(x, x.name, plats)),
+          select("peAddPlat", "Add platform", R().PLATFORMS.map(([n]) => n).filter((n) => !plats.some((x) => x.name === n)).map((n) => [n, n]), (n) => plats.push({ name: n, mentions: 0, on: true, custom: true }))),
+          h("div", { class: "row" }, other, h("button", { class: "keep", id: "peAddOther", onclick: addOther }, "Add"))),
+        h("div", { class: "pe-terms" }, h("h4", {}, "Your terms"), field("textarea", { id: "peTerms", rows: 4, value: (d.keywords ?? []).join(", ") }, "keywords", list),
+          h("p", { class: "hint" }, "Comma or line separated. An RFP whose title uses one scores higher; they are also searched live."),
+          h("h4", { class: "mt" }, "Product names"), field("input", { id: "peProducts", value: (d.products ?? []).join(", "), placeholder: "e.g. Your ERP, Your Payroll" }, "products", list))),
+      h("div", { class: "row pe-actions" },
+        h("button", { class: "primary", id: "peSave", onclick: saveProfileEdits }, "Save profile"),
+        h("button", { class: "keep", id: "peCancel", onclick: () => { state.profileDraft = null; state.profileEditing = false; renderCompany(); toast("Changes discarded."); } }, "Cancel"))));
+}
+
+/** Keep the draft, noting which fields a person set (a later read of the same site keeps them). */
+async function saveProfileEdits() {
+  const d = state.profileDraft, old = state.profile;
+  if (!d) return;
+  if (!String(d.name ?? "").trim()) return toast("The profile needs a company name.", true);
+  d.name = d.name.trim();
+  d.edited = { ...(old.edited ?? {}) };
+  for (const k of ["name", "summary", "keywords", "products"]) if (JSON.stringify(d[k] ?? "") !== JSON.stringify(old[k] ?? "")) d.edited[k] = true;
+  state.profileDraft = null;
+  state.profileEditing = false;
+  await saveProfile(d);
+  renderCompany(); renderSweepResults();
+  toast(`Profile saved for ${d.name}. Every RFP is re-scored against it.`);
+}
+
+/** Reading the same website again keeps what a person changed; a new website starts fresh. */
+function mergeManualEdits(fresh, old) {
+  for (const c of (old.capabilities ?? []).filter((x) => x.evidence?.includes("added by you"))) if (!fresh.capabilities.some((x) => x.id === c.id)) fresh.capabilities.push(c);
+  for (const i of (old.industries ?? []).filter((x) => x.evidence?.includes("added by you"))) if (!fresh.industries.some((x) => x.id === i.id)) fresh.industries.push(i);
+  for (const key of ["capabilities", "industries"]) for (const o of old[key] ?? []) if (o.on === false) { const n = fresh[key].find((x) => x.id === o.id); if (n) n.on = false; }
+  for (const o of old.platforms ?? []) { const n = fresh.platforms.find((x) => x.name === o.name); if (n) n.on = o.on; else if (o.custom) fresh.platforms.push(o); }
+  for (const f of ["name", "summary", "keywords", "products"]) if (old.edited?.[f]) fresh[f] = old[f];
+  if (old.edited) fresh.edited = old.edited;
+  return fresh;
+}
+const hostOf = (u) => { try { return new URL(/^https?:\/\//i.test(u) ? u : `https://${u}`).hostname.replace(/^www\./, ""); } catch { return ""; } };
+
+/** A new website: the old site's pages leave the reference library (they describe another company). */
+async function dropReferencesFrom(host) {
+  if (!host) return;
+  const refs = (state.library?.references ?? []).filter((r) => hostOf(r.source) === host);
+  for (const r of refs) {
+    try { if (STATIC) await idb.del("references", r.id); else await fetch(`/api/library/references/${encodeURIComponent(r.id)}`, { method: "DELETE", headers: { "X-RFP-Dashboard": "1" } }); } catch { /* keep going */ }
+  }
+}
 
 // =================================================================== Your template, references and export
 // The response template and the reference library are company-confidential: the local
