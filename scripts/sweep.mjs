@@ -16,7 +16,7 @@
 import { runSweep } from "../lib/sweep.mjs";
 import { closeBrowser } from "../lib/browser.mjs";
 import { loadTenant, outputFile, ROOT, tenantIds } from "../lib/config.mjs";
-import { loadLedger, saveLedger, mergeRun } from "../lib/ledger.mjs";
+import { loadLedger, saveLedger, mergeRun, writeTexts } from "../lib/ledger.mjs";
 import { writeWorkbook } from "../lib/excel.mjs";
 import { buildCalendar } from "../lib/ics.mjs";
 import fs from "node:fs";
@@ -35,7 +35,7 @@ const dryRun = flag("dry-run");
 
 const ledger = loadLedger(ROOT, tenantId);
 for (const ind of industries) {
-  const run = await runSweep(tenantId, ind, { width, detail, direct: flag("direct"), browser: !flag("no-browser"), geography: opt("geo") ?? null, capabilities: opt("capability") ? [opt("capability")] : [], sinceDays: opt("days") ? Number(opt("days")) : null, log: (m) => console.log(m) });
+  const run = await runSweep(tenantId, ind, { width, detail, direct: flag("direct"), browser: !flag("no-browser"), geography: opt("geo") ?? null, capabilities: opt("capability") ? [opt("capability")] : [], sinceDays: opt("days") ? Number(opt("days")) : null, docsRead: Object.fromEntries(ledger.findings.filter((f) => f.rfp?.readAt).map((f) => [f.id, f.rfp.readAt])), log: (m) => console.log(m) });
   console.log(`\n${ind}: ${run.postingsSeen} link(s) seen, ${run.findings.filter((f) => f.band === "pursue").length} pursue, ${run.findings.filter((f) => f.band === "review").length} review, ${run.gaps.length} coverage gap(s)`);
   if (run.skipped.length) console.log(`  skipped: ${run.skipped.join("; ")}`);
   if (run.caveat) console.log(`  CAVEAT: ${run.caveat}`);
@@ -43,7 +43,8 @@ for (const ind of industries) {
   for (const f of run.findings.slice(0, 15)) console.log(`  ${String(f.score).padStart(3)}  ${f.band.padEnd(6)}  ${f.title.slice(0, 90)}`);
   if (!dryRun) {
     const { added, refreshed } = mergeRun(ledger, run);
-    console.log(`  ledger: ${added} new, ${refreshed} refreshed`);
+    writeTexts(ROOT, run.texts);
+    console.log(`  ledger: ${added} new, ${refreshed} refreshed${Object.keys(run.texts ?? {}).length ? `, ${Object.keys(run.texts).length} solicitation document set(s) read` : ""}`);
   }
 }
 await closeBrowser();

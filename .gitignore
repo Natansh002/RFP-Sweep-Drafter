@@ -6,6 +6,7 @@ node_modules/
 *.log
 # Findings are business data: keep them out of git unless the team decides otherwise.
 store/*.json
+store/text/
 output/
 # No customer data in this repo. Keep any customer or prospect lists outside it.
 data/private/

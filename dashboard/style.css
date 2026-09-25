@@ -281,3 +281,65 @@ body.ws-open { overflow: hidden; }
 .empty-reqs h3 { margin: 0 0 6px; font-size: 14px; }
 .empty-reqs .steps { margin: 6px 0 0; padding-left: 20px; }
 .empty-reqs .steps li { margin: 4px 0; }
+
+/* Your company: the profile every RFP is scored against */
+input[type=url] { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; min-height: 32px; }
+.company-card { border-left: 3px solid var(--accent); }
+.company-head { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: flex-start; justify-content: space-between; }
+.company-head h2 { margin: 0 0 2px; font-size: 16px; }
+.company-head .hint { margin: 0; font-size: 12.5px; }
+.company-head .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.company-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.company-row input { flex: 1 1 260px; min-width: 0; }
+.company-alt { margin-top: 10px; }
+.company-alt summary { cursor: pointer; color: var(--accent); font-size: 13px; }
+.company-alt > * + * { margin-top: 8px; }
+.company-alt .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
+.company-alt input:not([type=file]) { width: 100%; }
+.co-name { color: var(--accent); }
+.co-summary { margin: 10px 0 0; color: var(--ink); font-size: 13px; max-width: 80ch; }
+.co-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px 20px; margin-top: 12px; }
+.co-grid h4 { margin: 0 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.co-terms .tag { margin: 0; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.chip { min-height: 26px; padding: 2px 9px; border-radius: 999px; font-size: 12.5px; }
+.chip.on { background: var(--pursue-bg); color: var(--pursue); border-color: transparent; }
+.chip.off { color: var(--muted); text-decoration: line-through; }
+.add-cap { min-height: 26px; padding: 2px 6px; font-size: 12.5px; border-radius: 999px; }
+.kw-input, .name-input { width: 100%; }
+.company-card > .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px; }
+.pill.fit-strong { background: var(--pursue-bg); color: var(--pursue); }
+.pill.fit-possible { background: var(--review-bg); color: var(--review); }
+.pill.fit-weak { background: var(--line); color: var(--muted); }
+.kpi .v.fit-strong { color: var(--pursue); }
+.kpi .v.fit-possible { color: var(--review); }
+.kpi .v.fit-weak { color: var(--muted); }
+.h2-hint { font-size: 13px; font-weight: 400; }
+.raw-note { margin: 8px 0; }
+
+/* Feedback must sit above the workspace overlay (z-index 50), or clicks there look dead. */
+#toast { z-index: 1000; }
+.decision-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
+.decision-row .hint { margin: 0; }
+button.decision.on.go { background: var(--pursue-bg); color: var(--pursue); border-color: var(--pursue); font-weight: 650; }
+button.decision.on.nogo { background: var(--danger-bg); color: var(--danger); border-color: var(--danger); font-weight: 650; }
+.status-tag { margin-left: 0; }
+.tag.st-pursuing { color: var(--pursue); border-color: var(--pursue); }
+.tag.st-no-bid { color: var(--danger); border-color: var(--danger); }
+
+/* Proofread and RFP submission status */
+.proof-head { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
+.proof-head .readiness { margin: 0; }
+.proof-head .hint { margin: 0; }
+.readiness.warn { color: var(--review); }
+.pill.sev-high, .sev.sev-high { background: var(--danger-bg); color: var(--danger); }
+.pill.sev-medium, .sev.sev-medium { background: var(--review-bg); color: var(--review); }
+.pill.sev-low, .sev.sev-low { background: var(--line); color: var(--muted); }
+.sev { display: inline-block; border-radius: 999px; padding: 0 8px; font-size: 12px; font-weight: 600; }
+.proof-issues td { vertical-align: top; }
+.proof-text { color: var(--muted); max-width: 44ch; }
+.ok-note { border-color: var(--pursue); }
+.checklist li { padding: 3px 0; }
+.checklist .tick { display: inline-block; width: 1.2em; font-weight: 700; }
+.checklist li.ok .tick { color: var(--pursue); }
+.checklist li.no .tick { color: var(--danger); }

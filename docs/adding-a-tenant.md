@@ -17,7 +17,7 @@ companies can share one pack.
 | `offerings.<industry>.extraTitleKeywords` / `extraBodyKeywords` / `extraDisqualifiers` | Your own keyword additions to the shared pack, without forking it. |
 | `offerings.<industry>.defaultAssignee` | A role, shown as the suggested owner next to the empty Assignee field. |
 | `offerings.<industry>.pitch` | Executive-summary text the drafter may use for this industry. |
-| `team` | **Role titles only** (e.g. `"RFP Manager"`, `"Bid Writer"`), never people's names or emails. Feeds the Assignee dropdown in the dashboard and the Excel `Team` sheet. The validator rejects emails. |
+| `team` | **Role titles only**: the four roles `"RFP Manager"`, `"Pre-sales Consultant"`, `"Account Executive"`, `"SME Contributor"`, never people's names or emails. Feeds the Assignee dropdown in the dashboard and the Excel `Team` sheet. The validator rejects emails. |
 | `autoAssign` | `false` by default: a person assigns each finding. `true` fills in the suggested owner. |
 | `profile` | What the drafter may say about the company: `oneLiner`, `summary`, `capabilities`, `differentiators`, `implementationApproach`, `referencesNote`. **Approved claims only.** Empty fields become `[TODO]`. |
 | `competitors` | `[{ "name": "...", "aliases": [] }]`. When one is named on a posting page, the finding is tagged and the draft gets a Competitive notes section. |

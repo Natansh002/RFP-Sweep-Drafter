@@ -59,18 +59,18 @@ a("drafter: uses tenant product lines", f.draft.response.includes("Demo ERP - Fi
 a("drafter: never drafts pricing", /pricing is never drafted/.test(f.draft.response));
 a("drafter: six action items with dates", f.actions.length === 6 && f.actions.every((x) => /^\d{4}-\d{2}-\d{2}$/.test(x.due)));
 a("drafter: submit is before close", f.actions.find((x) => x.id === "submit").due < posting.closeDate);
-a("drafter: assignee left for a person", f.assignee === "" && f.suggestedAssignee === "K-12 Sales Exec");
+a("drafter: assignee left for a person", f.assignee === "" && f.suggestedAssignee === "Account Executive");
 a("drafter: stable id", draftFinding(posting, s, k12, sr, "other").id === f.id);
 
 // ------------------------------------------------------------------ ledger
 const ledger = { tenant: "demo-edu", findings: [], runs: [], gaps: [] };
 mergeRun(ledger, { industry: "k12", findings: [f], gaps: [], channelsRead: 1, postingsSeen: 1 });
-updateFinding(ledger, f.id, { assignee: "Bid Writer", status: "Qualifying", notes: "call the buyer" });
-a("assigning a finding hands blank actions to the same person", ledger.findings[0].actions.every((x) => x.assignee === "Bid Writer"));
+updateFinding(ledger, f.id, { assignee: "Pre-sales Consultant", status: "Qualifying", notes: "call the buyer" });
+a("assigning a finding hands blank actions to the same person", ledger.findings[0].actions.every((x) => x.assignee === "Pre-sales Consultant"));
 const again = draftFinding({ ...posting }, { ...s, total: 70 }, k12, sr, "ca.mash.bidsandtenders");
 mergeRun(ledger, { industry: "k12", findings: [again], gaps: [], channelsRead: 1, postingsSeen: 1 });
 const kept = ledger.findings[0];
-a("re-sweep keeps assignee, status, notes", kept.assignee === "Bid Writer" && kept.status === "Qualifying" && kept.notes === "call the buyer");
+a("re-sweep keeps assignee, status, notes", kept.assignee === "Pre-sales Consultant" && kept.status === "Qualifying" && kept.notes === "call the buyer");
 a("re-sweep refreshes machine fields", kept.score === 70 && kept.seenCount === 2 && ledger.findings.length === 1);
 let threw = false;
 try { updateFinding(ledger, f.id, { assignee: "X" }, { expectedRev: 0 }); } catch (e) { threw = e.code === "CONFLICT"; }
@@ -91,19 +91,19 @@ const ah = {}; aws.getRow(1).eachCell((c, i) => (ah[String(c.value).replace(/\s*
 aws.getCell(2, ah["Done"]).value = "Yes";
 aws.addRow({}).getCell(ah["Finding ID"]).value = f.id;
 aws.getCell(aws.rowCount, ah["Action"]).value = "Book a call with the buyer";
-aws.getCell(aws.rowCount, ah["Assignee"]).value = "Solutions Consultant";
+aws.getCell(aws.rowCount, ah["Assignee"]).value = "SME Contributor";
 const edited = Buffer.from(await wb.xlsx.writeBuffer());
 const r = await importWorkbook(ledger, edited);
 const after = ledger.findings[0];
 a("import: assignee from the sheet", after.assignee === "RFP Manager" && after.status === "Pursuing");
 a("import: action done from the sheet", after.actions[0].done === true);
-a("import: new action row added", after.actions.some((x) => x.title === "Book a call with the buyer" && x.assignee === "Solutions Consultant"));
+a("import: new action row added", after.actions.some((x) => x.title === "Book a call with the buyer" && x.assignee === "SME Contributor"));
 a("import: nothing reported as conflict", r.conflicts.length === 0 && r.errors.length === 0);
-a("import: assigning a finding in the sheet hands its blank actions over, and they stay assigned", after.actions.filter((x) => x.source === "drafter").every((x) => x.assignee === "RFP Manager" || x.assignee === "Bid Writer"));
+a("import: assigning a finding in the sheet hands its blank actions over, and they stay assigned", after.actions.filter((x) => x.source === "drafter").every((x) => x.assignee === "RFP Manager" || x.assignee === "Pre-sales Consultant"));
 // Now the dashboard edits the same row, and the old sheet is imported again.
-updateFinding(ledger, f.id, { assignee: "Sales Exec" });
+updateFinding(ledger, f.id, { assignee: "Account Executive" });
 const r2 = await importWorkbook(ledger, edited);
-a("import: stale sheet does not overwrite a newer dashboard edit", ledger.findings[0].assignee === "Sales Exec" && r2.conflicts.length >= 1);
+a("import: stale sheet does not overwrite a newer dashboard edit", ledger.findings[0].assignee === "Account Executive" && r2.conflicts.length >= 1);
 
 // ------------------------------------------------------------------ offline sweep
 const HTML = `<html><body>${"<p>padding</p>".repeat(80)}

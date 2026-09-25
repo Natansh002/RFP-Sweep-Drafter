@@ -22,9 +22,11 @@ import { ROOT, tenantIds, loadTenant, loadPack, loadData, outputFile } from "../
 import { matchLibrary } from "../lib/library.mjs";
 import { loadLedger, saveLedger, mergeRun, updateFinding, addAction, updateAction, getFinding, STATUSES } from "../lib/ledger.mjs";
 import { workbookBuffer, importWorkbook, writeWorkbook } from "../lib/excel.mjs";
-import { runSweep } from "../lib/sweep.mjs";
+import { runSweep, readPublicPage } from "../lib/sweep.mjs";
+import { pageFacts, textFacts, profileLinks, buildProfile } from "../lib/profile.mjs";
+import { readStore, writeStore, mergePostings, writeTexts, readText } from "../lib/ledger.mjs";
 import { effectivePack } from "../lib/pack.mjs";
-import { draftResponse } from "../lib/draft.mjs";
+import { draftResponse, findingId } from "../lib/draft.mjs";
 import { safeLink } from "../lib/guard.mjs";
 import { buildCalendar } from "../lib/ics.mjs";
 import { DEFAULT_GO_NO_GO, COMPLIANCE_STATUSES, saveWorkspace } from "../lib/ledger.mjs";
@@ -103,8 +105,10 @@ const routes = [
     const res = await withLedger(GENERAL_ID, async (l) => {
       const ids = new Set(); let low = 0, gaps = 0;
       for (const ind of industries) {
-        const run = await runSweep(GENERAL_ID, ind, { width: Number(b.width ?? 2), capabilities: b.capability ? [b.capability] : [], geography: b.geography || null, sinceDays: b.days ? Number(b.days) : null, matrix: loadData("config/capability-matrix.json") ?? undefined, log: (m) => log.push(m), source: "dashboard" });
+        const run = await runSweep(GENERAL_ID, ind, { width: Number(b.width ?? 2), capabilities: b.capability ? [b.capability] : [], geography: b.geography || null, sinceDays: b.days ? Number(b.days) : null, matrix: loadData("config/capability-matrix.json") ?? undefined, profileTerms: b.profileTerms ?? null, docsRead: Object.fromEntries(l.findings.filter((f) => f.rfp?.readAt).map((f) => [f.id, f.rfp.readAt])), log: (m) => log.push(m), source: "dashboard" });
         mergeRun(l, run);
+        writeTexts(ROOT, run.texts);
+        writeStore(ROOT, "postings.json", mergePostings(readStore(ROOT, "postings.json"), run.raw));
         for (const f of run.findings) ids.add(f.id);
         low += run.lowFit ?? 0; gaps += run.gaps.length;
       }
@@ -115,22 +119,69 @@ const routes = [
     return { ...res, log };
   }],
 
+  // ---- company profile: understand the business from its website (or pasted text)
+  ["GET", /^\/api\/profile$/, async () => readStore(ROOT, "profile.json", {})],
+  ["PUT", /^\/api\/profile$/, async (req) => {
+    const p = await json(req);
+    if (!p || !p.name) throw Object.assign(new Error("A profile needs a name."), { status: 400 });
+    writeStore(ROOT, "profile.json", p);
+    return p;
+  }],
+  ["DELETE", /^\/api\/profile$/, async () => { writeStore(ROOT, "profile.json", {}); return {}; }],
+  ["POST", /^\/api\/profile\/build$/, async (req) => {
+    const b = await json(req);
+    let profile;
+    if (b.url) {
+      const url = /^https?:\/\//i.test(b.url) ? b.url : `https://${b.url}`;
+      // Guarded: public web only. A refused or unreadable site is the person's input, not a server fault.
+      const home = await readPublicPage(url).catch((e) => ({ error: e.message }));
+      if (home.error) throw Object.assign(new Error(`Could not read ${url}: ${home.error}`), { status: /^Blocked:/.test(home.error) ? 400 : 422 });
+      const pages = [pageFacts(home.html, url)];
+      const more = profileLinks(url, pages[0], 6);
+      for (const u of more) {
+        const r = await readPublicPage(u).catch((e) => ({ error: e.message }));
+        if (!r.error && r.html) pages.push(pageFacts(r.html, u));
+      }
+      profile = buildProfile({ website: url, pages });
+    } else if (b.text && String(b.text).trim().length > 80) {
+      profile = buildProfile({ website: b.website || null, pages: [textFacts(b.text, b.name || "")], source: "pasted text" });
+    } else throw Object.assign(new Error("Give a website address, or paste at least a paragraph about the company."), { status: 400 });
+    writeStore(ROOT, "profile.json", profile);
+    return profile;
+  }],
+  ["GET", /^\/api\/postings$/, async () => readStore(ROOT, "postings.json", { postings: [] })],
+  // The full solicitation text the sweep read for a finding (notice + public documents).
+  ["GET", /^\/api\/findings\/([\w-]+)\/text$/, async (req, u, [id]) => {
+    const text = readText(ROOT, id);
+    if (text == null) throw Object.assign(new Error("No solicitation documents were read for this finding."), { status: 404 });
+    return { id, text };
+  }],
+
   ["PUT", /^\/api\/findings\/([\w-]+)\/workspace$/, async (req, u, [id]) => {
     const body = await json(req);
     return withLedger(tenantParam(u), (l) => saveWorkspace(l, id, body, { by: actor(req) }));
   }],
 
-  // An RFP document someone uploaded in "Analyze a document", added to the pipeline.
+  // An RFP document someone uploaded in "Analyze a document", or a posting the sweep saw
+  // that no industry pack kept, added to the pipeline by a person.
   ["POST", /^\/api\/findings$/, async (req, u) => {
     const b = await json(req);
     const tid = tenantParam(u);
     if (!b.title || !b.text) throw Object.assign(new Error("title and text are required"), { status: 400 });
+    const day = (d) => (/^\d{4}-\d{2}-\d{2}$/.test(String(d ?? "")) ? d : null);
     return withLedger(tid, (l) => {
+      const url = safeLink(b.url) ?? null;
+      const fromSweep = !!b.channel && b.channel !== "upload";
+      // A posting from the sweep keeps the id the sweep gives it, so a later sweep updates it instead of adding a copy.
+      const id = fromSweep ? findingId(tid, { sourceId: b.sourceId || null, title: b.title, buyer: b.buyer }) : `${tid.slice(0, 4)}-u${Date.now().toString(36)}`;
+      const same = l.findings.find((x) => x.id === id || (x.title === String(b.title).slice(0, 200) && (x.url ?? null) === url));
+      if (same) return same;
       const caps = matchCapabilities(b.title, b.text);
-      const id = `${tid.slice(0, 4)}-u${Date.now().toString(36)}`;
       const f = {
-        id, tenant: tid, industry: b.industry || "any", industryStatus: "uploaded", title: String(b.title).slice(0, 200), buyer: b.buyer || null, country: null, url: safeLink(b.url) ?? null,
-        channel: "upload", closeDate: b.closeDate || null, estimatedValue: null, score: Number(b.score ?? 0), band: b.band || "review", reasons: ["uploaded by a person; scored by the analyzer"], flags: [],
+        id, tenant: tid, industry: b.industry || "any", industryStatus: fromSweep ? "added" : "uploaded", title: String(b.title).slice(0, 200), buyer: b.buyer || null, country: /^(CA|US)$/.test(b.country ?? "") ? b.country : null, url,
+        channel: fromSweep ? String(b.channel).slice(0, 60) : "upload", closeDate: day(b.closeDate), publishedDate: day(b.publishedDate), noticeType: b.noticeType ? String(b.noticeType).slice(0, 60) : null,
+        estimatedValue: null, score: Math.max(0, Math.min(100, Number(b.score ?? 0) || 0)), band: ["pursue", "review"].includes(b.band) ? b.band : "review",
+        reasons: [b.reason ? String(b.reason).slice(0, 300) : "uploaded by a person; scored by the analyzer"], flags: [],
         draft: { brief: "", response: null }, assignee: "", suggestedAssignee: "", actions: [], keyDates: {}, requirements: [], competitors: [],
         sourceText: String(b.text).slice(0, 60000), capabilities: caps.map(({ id, label, matched }) => ({ id, label, matched })), team: recommendTeam(caps, loadData("config/capability-matrix.json") ?? undefined),
         status: "New", notes: "", rev: 0, firstSeen: new Date().toISOString(), lastSeen: new Date().toISOString(), seenCount: 1, goNoGo: {}, lossReason: "", awardee: "",
@@ -183,6 +234,7 @@ const routes = [
       for (const ind of industries) {
         const run = await runSweep(tid, ind, { width: Number(body.width ?? 2), direct: !!body.direct, log: (m) => log.push(m), source: "dashboard" });
         out.push({ industry: ind, ...mergeRun(l, run), halted: run.halted, haltReason: run.haltReason, gaps: run.gaps.length, caveat: run.caveat });
+        writeTexts(ROOT, run.texts);
       }
       return out;
     });

@@ -46,7 +46,7 @@ async function staticApi(method, path) {
   if (!file) throw new Error("Not available in the published view.");
   const res = await fetch(file, { cache: "no-cache" });
   if (!res.ok) throw new Error(`${file}: ${res.status}`);
-  return path === "/api/ledger" ? res.json() : res;
+  return path === "/api/ledger" ? localEdits.apply(await res.json()) : res;
 }
 
 async function api(method, path, body, raw = false) {
@@ -151,7 +151,6 @@ function render() {
   renderKpis();
   if (state.tab === "findings") renderFindings();
   if (state.tab === "actions") renderActions();
-  if (state.tab === "coverage") renderCoverage();
   if (STATIC) lockEdits();
 }
 
@@ -391,21 +390,11 @@ function renderActions() {
   )));
 }
 
-function renderCoverage() {
-  const gaps = state.ledger.gaps ?? [];
-  $("#gaps tbody").replaceChildren(...(gaps.length ? gaps.map((g) => h("tr", {}, h("td", {}, g.industry), h("td", {}, g.channel), h("td", {}, g.status), h("td", {}, g.detail || ""))) : [h("tr", {}, h("td", { colspan: 4, class: "empty" }, "No gaps recorded."))]));
-  const runs = state.ledger.runs ?? [];
-  $("#runs tbody").replaceChildren(...runs.slice(0, 50).map((r) => h("tr", {},
-    h("td", {}, new Date(r.runAt).toLocaleString()), h("td", {}, r.industry), h("td", {}, r.source),
-    h("td", { class: "num" }, r.postingsSeen), h("td", { class: "num" }, r.pursue), h("td", { class: "num" }, r.review), h("td", { class: "num" }, r.added), h("td", { class: "num" }, r.gaps),
-    h("td", {}, [r.halted ? `HALTED: ${r.haltReason}` : "", r.caveat || ""].filter(Boolean).join(" ")))));
-}
-
 function switchTab(tab) {
   state.tab = tab;
   for (const b of document.querySelectorAll(".main-tabs button")) b.classList.toggle("active", b.dataset.tab === tab);
   for (const s of document.querySelectorAll(".tab")) s.hidden = s.id !== `tab-${tab}`;
-  const pipeline = ["findings", "actions", "coverage"].includes(tab);
+  const pipeline = ["findings", "actions"].includes(tab);
   for (const el of document.querySelectorAll(".pipeline-only")) el.hidden = !pipeline;
   render();
 }
@@ -483,8 +472,19 @@ $("#importRun").addEventListener("change", async (e) => {
 const R = () => window.RFP;
 const GENERAL = "all";
 
+/** Published site: decisions (status, owner) made here are kept in this browser only, over the published data. */
+const localEdits = {
+  all() { try { return JSON.parse(localStorage.getItem("rfp.edits") || "{}"); } catch { return {}; } },
+  save(id, patch) { try { const e = this.all(); e[id] = { ...e[id], ...patch, at: new Date().toISOString() }; localStorage.setItem("rfp.edits", JSON.stringify(e)); } catch { /* private window */ } },
+  apply(ledger) {
+    const e = this.all();
+    for (const f of ledger.findings ?? []) if (e[f.id]) { const { at, ...patch } = e[f.id]; Object.assign(f, patch, { localEdit: at }); }
+    return ledger;
+  },
+};
+
 async function fetchLedgerFor(tid) {
-  if (STATIC) { const r = await fetch(`data/${tid}.json`, { cache: "no-cache" }); return r.ok ? r.json() : { findings: [], runs: [], gaps: [] }; }
+  if (STATIC) { const r = await fetch(`data/${tid}.json`, { cache: "no-cache" }); return localEdits.apply(r.ok ? await r.json() : { findings: [], runs: [], gaps: [] }); }
   const r = await fetch(`/api/ledger?tenant=${encodeURIComponent(tid)}`);
   return r.json();
 }
@@ -510,6 +510,7 @@ function setupSweepForm() {
   $("#sNote").replaceChildren(...note);
   $("#sRun").onclick = runSearch;
   fetchLedgerFor(GENERAL).then((l) => { state.allLedger = l; renderSweepResults(); });
+  loadProfile().then(() => renderSweepResults());
 }
 
 function sweepParams() {
@@ -519,6 +520,14 @@ function sweepParams() {
 }
 
 const sectorOf = (f) => f.sector ?? R().classifySector({ buyer: f.buyer, source: f.channel });
+/** Fit shown everywhere in the sweep: to the company's product offering when there is a profile, else the sweep's own score. */
+function fitOf(f) {
+  if (state.profile) {
+    const c = f._fit ?? (f._fit = R().companyFit(f, state.profile));
+    return { score: c.score, band: c.band === "strong" ? "pursue" : c.band === "possible" ? "review" : "low", why: c.reasons.join("\n") };
+  }
+  return f.raw ? { score: null, band: "low", why: "Seen by the sweep; not scored by an industry pack" } : { score: f.score, band: f.band, why: (f.reasons ?? []).join("\n") };
+}
 function industryMatch(f, sel) {
   if (!sel) return true;
   const [kind, id] = sel.split(":");
@@ -577,12 +586,13 @@ async function runSearch() {
     // Map the chosen buyer industry to the search pack: K-12 and nonprofit have their own; the rest search capability-led.
     const [kind, id] = (p.industry || "").split(":");
     const pack = kind === "pack" ? id : kind === "sector" ? state.meta.sectors.find((x) => x.id === id)?.pack : "";
-    const r = await fetch("/api/search?tenant=all", { method: "POST", headers: { "X-RFP-Dashboard": "1", "content-type": "application/json" }, body: JSON.stringify({ ...p, industry: pack || "", days }) }).then(async (x) => { const j = await x.json(); if (!x.ok) throw new Error(j.error); return j; });
+    const r = await fetch("/api/search?tenant=all", { method: "POST", headers: { "X-RFP-Dashboard": "1", "content-type": "application/json" }, body: JSON.stringify({ ...p, industry: pack || "", days, profileTerms: state.profile ? R().profileSearch(state.profile) : null }) }).then(async (x) => { const j = await x.json(); if (!x.ok) throw new Error(j.error); return j; });
     state.allLedger = await fetchLedgerFor(GENERAL);
+    if (state.profile) { state.postings = null; await loadPostings(); }
     // Keep only what matches the chosen buyer industry.
     state.sweepIds = new Set(state.allLedger.findings.filter((f) => r.ids.includes(f.id) && industryMatch(f, p.industry)).map((f) => f.id));
     state.sweepLow = r.low;
-    if (r.gaps) toast(`${r.gaps} source(s) could not be read. See Coverage & runs.`);
+    if (r.gaps) toast(`${r.gaps} source(s) could not be read this time (bot checks, sign-ins or errors); the rest were swept.`);
   } catch (e) { toast(e.message, true); }
   btn.disabled = false; btn.textContent = "Run RFP Sweep";
   renderSweepResults();
@@ -591,10 +601,10 @@ async function runSearch() {
 /** What each workflow step shows when clicked. */
 const FLOW_FILTERS = {
   understand: { label: "Read in depth", test: (f) => (f.requirements ?? []).length > 0 || !!f.workspace?.analysis },
-  qualify: { label: "High fit", test: (f) => f.band === "pursue" },
+  qualify: { label: "High fit", test: (f) => fitOf(f).band === "pursue" },
   assign: { label: "Assigned", test: (f) => !!f.assignee, fallback: { label: "Unassigned (none are assigned yet)", test: (f) => !f.assignee } },
   answer: { label: "Drafted", test: (f) => !!f.workspace?.answers, empty: "Nothing drafted yet. Open an opportunity and press Draft response." },
-  review: { label: "Red-team ready", test: (f) => f.workspace?.redTeam?.readiness === "Ready", empty: "Nothing has passed the red-team check yet. Open a drafted opportunity and run Red-team." },
+  review: { label: "Ready to submit or submitted", test: (f) => f.status === "Submitted" || f.workspace?.redTeam?.readiness === "Ready", empty: "Nothing is ready to submit yet. Open a drafted opportunity, proofread it, then check its RFP submission status." },
 };
 
 function onFlowStep(step) {
@@ -621,10 +631,10 @@ function renderFlow(list) {
   const shown = list ?? all;
   set("flowDiscover", `${shown.length} opportunit${shown.length === 1 ? "y" : "ies"}`);
   set("flowUnderstand", `${shown.filter((f) => (f.requirements ?? []).length || f.workspace?.analysis).length} read in depth`);
-  set("flowQualify", `${shown.filter((f) => f.band === "pursue").length} high fit`);
+  set("flowQualify", `${shown.filter((f) => fitOf(f).band === "pursue").length} high fit`);
   set("flowAssign", `${shown.filter((f) => f.assignee).length} assigned`);
   set("flowAnswer", `${shown.filter((f) => f.workspace?.answers).length} drafted`);
-  set("flowReview", `${shown.filter((f) => f.workspace?.redTeam?.readiness === "Ready").length} ready`);
+  set("flowReview", `${shown.filter((f) => f.status === "Submitted" || f.workspace?.redTeam?.readiness === "Ready").length} ready or submitted`);
   set("flowExport", "Excel + proposal");
   const ws = state.ws ?? state.aws;
   const stage = !ws ? (state.sweepIds ? "qualify" : "discover") : ws.redTeam ? "export" : ws.answers ? "review" : ws.analysis ? (ws.finding?.assignee ? "answer" : "assign") : "understand";
@@ -650,6 +660,17 @@ function renderSweepResults() {
   if (!box || !state.allLedger) return;
   const p = { industry: $("#sIndustry").value, geography: $("#sGeo").value, capability: $("#sCap").value, days: $("#sDays").value, status: $("#sStatus").value };
   let list = (state.sweepIds && p.status === "active" ? state.allLedger.findings.filter((f) => state.sweepIds.has(f.id)) : clientFilter(state.allLedger.findings, p)).sort((a, b) => b.score - a.score);
+  // With a company profile: add every posting the sweep saw (not only what the packs kept),
+  // score each against the company, and show the relevant ones first.
+  let relevance = null;
+  if (state.profile) {
+    const have = new Set(list.map((f) => `${(f.title ?? "").toLowerCase()}|${(f.buyer ?? "").toLowerCase()}`));
+    const extra = clientFilter((state.postings ?? []).filter((r) => !have.has(`${(r.title ?? "").toLowerCase()}|${(r.buyer ?? "").toLowerCase()}`)), p);
+    const all = [...list, ...extra];
+    const relevant = all.filter((f) => fitOf(f).score >= 40);
+    relevance = { all: all.length, relevant: relevant.length };
+    list = (state.relevantOnly ? relevant : all).sort((a, b) => fitOf(b).score - fitOf(a).score || (b.score ?? 0) - (a.score ?? 0));
+  }
   renderFlow(state.sweepIds ? list : null);
   let flowNote = null;
   if (state.flowFilter && FLOW_FILTERS[state.flowFilter]) {
@@ -660,7 +681,7 @@ function renderSweepResults() {
     if (!narrowed.length && ff.empty) flowNote.append(h("div", { class: "hint" }, ff.empty));
     list = narrowed;
   }
-  const high = list.filter((f) => f.band === "pursue").length, review = list.filter((f) => f.band === "review").length;
+  const high = list.filter((f) => fitOf(f).band === "pursue").length, review = list.filter((f) => fitOf(f).band === "review").length;
   // A narrower geography hides matches elsewhere: say how many, with one click to show them.
   let geoNote = null;
   if (p.geography && p.geography !== "na" && !state.flowFilter) {
@@ -672,21 +693,21 @@ function renderSweepResults() {
     ...(geoNote ? [geoNote] : []),
     ...(flowNote ? [flowNote] : []), // replaceChildren prints a null as the text "null"
     h("div", { class: "results-head" },
-      h("h2", {}, `${list.length} ${list.length === 1 ? "opportunity" : "opportunities"} found`),
-      h("span", { class: "counts" }, h("span", { class: "pill pursue" }, `${high} High fit`), " ", h("span", { class: "pill review" }, `${review} Review`), state.sweepLow != null ? [" ", h("span", { class: "pill low" }, `${state.sweepLow} Low fit (not listed)`)] : "")),
+      h("h2", {}, relevance ? `${list.length} ${list.length === 1 ? "opportunity" : "opportunities"} ${state.relevantOnly ? `relevant to ${state.profile.name}` : "found"}` : `${list.length} ${list.length === 1 ? "opportunity" : "opportunities"} found`,
+        relevance && state.relevantOnly && relevance.all > relevance.relevant ? h("span", { class: "hint h2-hint" }, ` · ${relevance.all - relevance.relevant} less relevant hidden`) : null),
+      h("span", { class: "counts" }, h("span", { class: "pill pursue" }, `${high} ${state.profile ? "Strong fit" : "High fit"}`), " ", h("span", { class: "pill review" }, `${review} ${state.profile ? "Possible fit" : "Review"}`), state.sweepLow != null && !state.profile ? [" ", h("span", { class: "pill low" }, `${state.sweepLow} Low fit (not listed)`)] : "")),
     list.length ? h("div", { class: "tablewrap" }, h("table", { class: "grid" },
-      h("thead", {}, h("tr", {}, ...["Fit", "Opportunity", "Customer", "Industry", "Deadline", "Value", "Owner", "Status", ""].map((x) => h("th", {}, x)))),
+      h("thead", {}, h("tr", {}, ...["Fit", "Opportunity", "Customer", "Industry", "Deadline", "Owner", "Status", ""].map((x) => h("th", { title: x === "Fit" ? (state.profile ? `Fit to what ${state.profile.name} sells, from its website` : "Add your company website to score fit on what you sell") : "" }, x)))),
       h("tbody", {}, ...list.map((f) => {
         const d = daysLeft(f.closeDate);
         return h("tr", { class: state.ws?.finding?.id === f.id ? "selected" : "" },
-          h("td", {}, h("span", { class: `pill ${f.band}` }, f.score)),
+          h("td", {}, (() => { const x = fitOf(f); return h("span", { class: `pill ${x.band}`, title: x.why }, x.score ?? "—"); })()),
           h("td", { class: "title" }, f.url ? h("a", { href: f.url, target: "_blank", rel: "noopener noreferrer" }, f.title) : f.title,
             h("div", { class: "buyer" }, (f.capabilities ?? []).slice(0, 2).map((c) => h("span", { class: "tag" }, c.label)), f.noticeType ? h("span", { class: "tag" }, f.noticeType) : null)),
           h("td", {}, f.buyer || "—"),
           h("td", {}, (() => { const sc = sectorOf(f); return h("span", { title: sc ? `Inferred: ${sc.basis}` : "" }, sc?.label ?? "—"); })()),
           h("td", {}, f.closeDate ? h("span", { class: `due ${d < 0 ? "over" : d <= 14 ? "soon" : ""}` }, f.closeDate, h("br"), `${d} days`) : h("span", { class: "unassigned" }, "not stated")),
-          h("td", { class: "num" }, f.estimatedValue ? money(f.estimatedValue) : "—"),
-          h("td", {}, f.assignee || h("span", { class: "unassigned" }, f.team?.opportunityOwner ? `suggest: ${f.team.opportunityOwner}` : "unassigned")),
+          h("td", {}, f.assignee || h("span", { class: "unassigned" }, f.team ? `suggest: ${f.team.rfpManager ?? "RFP Manager"}` : "unassigned")),
           h("td", {}, f.status, (() => { const l = lifecycle(f); return l === "active" ? null : h("div", {}, h("span", { class: `tag life-${l}` }, l === "pastdue" ? "past due" : "closed")); })()),
           h("td", {}, h("button", { class: "primary small", onclick: () => openWorkspace(f, "#sWorkspace") }, "Open")));
       })))) : emptySweep(p));
@@ -714,23 +735,193 @@ function emptySweep(p) {
     h("p", { class: "hint mt" }, "Found an RFP there? Download it and load it in Analyze a document for the full five-step analysis."));
 }
 
-// =================================================================== Workspace
-// Qualify → Assign → Analyze RFP → Draft Response → Red-team, for one opportunity.
 
-const STEPS = [["qualify", "Qualify"], ["assign", "Assign"], ["analyze", "Analyze RFP"], ["draft", "Draft response"], ["redteam", "Red-team"]];
-const WS_TABS = [["overview", "Overview"], ["requirements", "Requirements"], ["responses", "Responses"], ["risks", "Risks"], ["team", "Team"], ["proposal", "Proposal"]];
+// =================================================================== Your company
+// Understand the business from its website, then score every opportunity against it.
+// Locally the server reads the website. The published page cannot read other sites
+// (browsers block it unless a site allows it), so it offers paste / upload instead.
+
+state.profile = null;
+state.postings = null;
+state.relevantOnly = true;
+
+async function loadProfile() {
+  try {
+    if (STATIC) state.profile = JSON.parse(localStorage.getItem("rfp.profile") || "null");
+    else { const r = await fetch("/api/profile"); const j = await r.json(); state.profile = j && j.name ? j : null; }
+  } catch { state.profile = null; }
+  try { state.relevantOnly = localStorage.getItem("rfp.relevantOnly") !== "0"; } catch { /* default on */ }
+  if (state.profile) await loadPostings();
+  renderCompany();
+}
+
+async function saveProfile(p) {
+  state.profile = p;
+  forgetFits();
+  if (STATIC) { try { localStorage.setItem("rfp.profile", JSON.stringify(p)); } catch { /* private window */ } }
+  else await fetch("/api/profile", { method: "PUT", headers: { "X-RFP-Dashboard": "1", "content-type": "application/json" }, body: JSON.stringify(p) });
+}
+
+function forgetFits() {
+  for (const f of [...(state.allLedger?.findings ?? []), ...(state.postings ?? [])]) delete f._fit;
+  const ws = state.ws ?? state.aws;
+  if (ws?.analysis && document.body.contains($(ws.target))) { refreshFit(ws); if ($(ws.target)?.firstChild) renderWorkspace(ws); }
+}
+
+async function clearProfile() {
+  state.profile = null;
+  forgetFits();
+  if (STATIC) { try { localStorage.removeItem("rfp.profile"); } catch { /* ignore */ } }
+  else await fetch("/api/profile", { method: "DELETE", headers: { "X-RFP-Dashboard": "1" } });
+  renderCompany(); renderSweepResults();
+}
+
+async function loadPostings() {
+  if (state.postings) return;
+  try {
+    const r = await fetch(STATIC ? "data/postings.json" : "/api/postings", { cache: "no-cache" });
+    const j = r.ok ? await r.json() : { postings: [] };
+    state.postings = (j.postings ?? []).map(rawToFinding);
+  } catch { state.postings = []; }
+}
+
+function strHash(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619) >>> 0; return h.toString(36); }
+/** A posting the sweep saw but no pack kept, shaped like a finding so every screen works with it. */
+function rawToFinding(p) {
+  const caps = R().matchCapabilities(p.title, p.summary ?? "").slice(0, 3);
+  return { id: `raw-${strHash(`${p.url}|${p.title}`)}`, raw: true, title: p.title, buyer: p.buyer, url: p.url, country: p.country, channel: p.channel,
+    closeDate: p.closeDate, publishedDate: p.publishedDate, noticeType: p.noticeType, summary: p.summary, sourceText: p.summary ?? "", sourceId: p.sourceId ?? null,
+    band: "raw", score: null, status: "New", sector: R().classifySector({ buyer: p.buyer, source: p.channel }),
+    capabilities: caps.map(({ id, label, matched }) => ({ id, label, matched })) };
+}
+
+async function buildFromWebsite(url) {
+  if (!url) return toast("Enter your company's website first.", true);
+  const home = /^https?:\/\//i.test(url) ? url : `https://${url}`;
+  if (STATIC) {
+    // The published page's security policy lets it talk only to its own site, so it
+    // cannot read another website. Guide the person to paste or upload instead.
+    state.profileFallback = true; state.pendingWebsite = home;
+    renderCompany();
+    $("#pText")?.focus();
+    return;
+  }
+  const btn = $("#pBuild");
+  if (btn) { btn.disabled = true; btn.textContent = "Reading your website…"; }
+  try {
+    const r = await fetch("/api/profile/build", { method: "POST", headers: { "X-RFP-Dashboard": "1", "content-type": "application/json" }, body: JSON.stringify({ url: home }) });
+    const profile = await r.json();
+    if (!r.ok) throw new Error(profile.error);
+    state.profile = profile; state.postings = null; await loadPostings();
+    state.profileEditing = true;
+    toast(`Read ${profile.pagesRead?.length ?? 1} page(s) of ${profile.name}: ${profile.capabilities.length} capabilit${profile.capabilities.length === 1 ? "y" : "ies"}, ${profile.industries.length} industr${profile.industries.length === 1 ? "y" : "ies"}. Review it below.`);
+  } catch (e) {
+    state.profileFallback = true; state.pendingWebsite = home;
+    toast(`${e.message}. Paste the text of your website or upload a brochure instead.`, true);
+  }
+  renderCompany(); renderSweepResults();
+}
+
+async function buildFromText(text, name, website) {
+  if (!text || text.trim().length < 80) return toast("Paste at least a paragraph about what your company sells and to whom.", true);
+  let site = website ? (/^https?:\/\//i.test(website) ? website : `https://${website}`) : null;
+  // Only a public website is kept on the profile (the same rule as the server's guard).
+  if (site && /^https?:\/\/(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|0\.0\.0\.0|\[)/i.test(site)) site = null;
+  const profile = R().buildProfile({ website: site, pages: [R().textFacts(text, name || "")], source: "pasted text" });
+  if (name) profile.name = name;
+  else if (profile.name === "Your company" && site) { try { profile.name = new URL(site).hostname.replace(/^www\./, "").split(".")[0].replace(/^./, (c) => c.toUpperCase()); } catch { /* keep */ } }
+  state.pendingWebsite = null;
+  await saveProfile(profile); await loadPostings();
+  state.profileEditing = true; state.profileFallback = false;
+  toast(`Profile built: ${profile.capabilities.length} capabilit${profile.capabilities.length === 1 ? "y" : "ies"}, ${profile.industries.length} industr${profile.industries.length === 1 ? "y" : "ies"}`);
+  renderCompany(); renderSweepResults();
+}
+
+function chip(item, label, onToggle) {
+  return h("button", { class: `chip keep ${item.on === false ? "off" : "on"}`, "aria-pressed": String(item.on !== false), title: item.evidence?.length ? `From your site: ${item.evidence.join(", ")}` : item.mentions ? `${item.mentions} mention(s)` : "", onclick: () => { item.on = item.on === false; onToggle(); } }, item.on === false ? "＋ " : "✓ ", label);
+}
+
+function renderCompany() {
+  const box = $("#companyCard");
+  if (!box) return;
+  const p = state.profile;
+  if (!p) {
+    const url = h("input", { id: "pUrl", type: "url", placeholder: "https://www.yourcompany.com", "aria-label": "Company website", autocomplete: "url", value: state.pendingWebsite ?? "" });
+    url.addEventListener("keydown", (e) => { if (e.key === "Enter") buildFromWebsite(url.value.trim()); });
+    const text = h("textarea", { id: "pText", placeholder: "…or paste your About / Products / Solutions text here" });
+    const name = h("input", { id: "pName", placeholder: "Company name (optional)" });
+    const file = h("input", { id: "pFile", type: "file", accept: ".pdf,.docx,.txt,.md,.html,.htm" });
+    file.addEventListener("change", async () => { const fl = file.files[0]; if (!fl) return; try { text.value = await readDocument(fl); toast(`${fl.name} read`); } catch (e) { toast(`Could not read ${fl.name}: ${e.message}`, true); } });
+    box.replaceChildren(
+      h("div", { class: "company-head" }, h("h2", {}, "Your company"), h("span", { class: "hint" }, "Tell the sweep what you sell. It reads your website, works out your offering, and scores every RFP against it.")),
+      h("div", { class: "row company-row" }, url, h("button", { id: "pBuild", class: "primary", onclick: () => buildFromWebsite(url.value.trim()) }, "Understand my business")),
+      h("details", { class: "company-alt", open: state.profileFallback || undefined },
+        h("summary", {}, STATIC ? "Can't read your website here? Paste text or upload a brochure" : "Or paste text / upload a brochure"),
+        state.profileFallback ? h("p", { class: "notice" }, STATIC ? "For security, this published page can only talk to its own site, so it cannot read yours. " : "The website could not be read. ",
+          state.pendingWebsite ? ["Open ", h("a", { href: state.pendingWebsite, target: "_blank", rel: "noopener noreferrer" }, state.pendingWebsite.replace(/^https?:\/\//, "")), ", "] : "Open your website, ",
+          "copy the text of its home, products and about pages, and paste it here (or upload a brochure).", STATIC ? " The local dashboard (npm run dashboard) reads the website for you." : "") : null,
+        name, text, h("div", { class: "row" }, file, h("button", { id: "pBuildText", class: state.profileFallback ? "primary" : "keep", onclick: () => buildFromText(text.value, name.value.trim(), url.value.trim()) }, "Build profile from text"))));
+    return;
+  }
+  // A chip toggle or an added capability is saved at once; terms and name on "Save profile".
+  const rerender = async () => { await saveProfile(p); renderCompany(); renderSweepResults(); };
+  const kw = h("input", { class: "kw-input", value: (p.keywords ?? []).join(", "), "aria-label": "Your terms" });
+  const nm = h("input", { class: "name-input", value: p.name ?? "", "aria-label": "Company name" });
+  const editing = !!state.profileEditing;
+  box.replaceChildren(
+    h("div", { class: "company-head" },
+      h("div", {}, h("h2", {}, "Scoring for ", h("span", { class: "co-name" }, p.name)),
+        h("div", { class: "hint" }, p.website ? h("a", { href: p.website, target: "_blank", rel: "noopener noreferrer" }, p.website.replace(/^https?:\/\//, "")) : "from pasted text",
+          ` · ${p.pagesRead?.length ? `${p.pagesRead.length} page(s) read` : `${p.words ?? 0} words`} · inferred from ${p.source === "pasted text" ? "your text" : "your website"}; review before relying on it`)),
+      h("div", { class: "row" },
+        h("label", { class: "check" }, h("input", { type: "checkbox", id: "pRelevant", checked: state.relevantOnly, onchange: (e) => { state.relevantOnly = e.target.checked; try { localStorage.setItem("rfp.relevantOnly", e.target.checked ? "1" : "0"); } catch { /* ignore */ } renderSweepResults(); } }), " Show only RFPs relevant to us"),
+        h("button", { class: "keep", onclick: () => { state.profileEditing = !editing; renderCompany(); } }, editing ? "Done" : "Edit profile"),
+        p.website && !STATIC ? h("button", { class: "keep", onclick: () => buildFromWebsite(p.website) }, "Re-read website") : null,
+        h("button", { class: "keep link", onclick: () => { if (confirm("Remove this company profile?")) clearProfile(); } }, "Remove"))),
+    p.summary ? h("p", { class: "co-summary" }, p.summary) : null,
+    h("div", { class: "co-grid" },
+      h("div", {}, h("h4", {}, "What you sell"), h("div", { class: "chips" }, ...(p.capabilities.length ? p.capabilities.map((c) => chip(c, c.label, rerender)) : [h("span", { class: "hint" }, "No capability recognised. Add your terms below.")]),
+        editing ? h("select", { class: "add-cap", "aria-label": "Add a capability", onchange: (e) => { const c = state.meta.capabilities.find((x) => x.id === e.target.value); if (c && !p.capabilities.some((x) => x.id === c.id)) p.capabilities.push({ id: c.id, label: c.label, strength: 0, evidence: ["added by you"], on: true }); rerender(); } },
+          h("option", { value: "" }, "＋ Add capability"), ...state.meta.capabilities.filter((c) => !p.capabilities.some((x) => x.id === c.id)).map((c) => h("option", { value: c.id }, c.label))) : null)),
+      h("div", {}, h("h4", { title: "Read from your website for context. Fit is scored on what you sell, not on the buyer's industry." }, "Who you serve (context)"), h("div", { class: "chips" }, ...(p.industries.length ? p.industries.map((i) => h("span", { class: "tag", title: i.evidence?.length ? `From your site: ${i.evidence.join(", ")}` : "" }, i.label)) : [h("span", { class: "hint" }, "None named on the site.")]))),
+      h("div", {}, h("h4", {}, "Platforms"), h("div", { class: "chips" }, ...(p.platforms.length ? p.platforms.map((x) => chip(x, x.name, rerender)) : [h("span", { class: "hint" }, "None named.")]))),
+      h("div", { class: "co-terms" }, h("h4", {}, "Your terms"), editing ? [kw, h("div", { class: "hint" }, "Comma-separated. RFPs using these words score higher.")] : h("div", { class: "chips" }, ...(p.keywords ?? []).slice(0, 14).map((k) => h("span", { class: "tag" }, k))))),
+    editing ? h("div", { class: "row" }, h("label", {}, "Name ", nm), h("button", { class: "primary", onclick: async () => { p.keywords = kw.value.split(",").map((x) => x.trim()).filter(Boolean); p.name = nm.value.trim() || p.name; state.profileEditing = false; await rerender(); toast("Profile saved. Every RFP is re-scored against it."); } }, "Save profile")) : null);
+}
+
+// =================================================================== Workspace
+// Qualify → Assign → Analyze RFP → Draft response → Proofread → RFP submission status, for one opportunity.
+
+const STEPS = [["qualify", "Qualify"], ["assign", "Assign"], ["analyze", "Analyze RFP"], ["draft", "Draft response"], ["proofread", "Proofread"], ["submission", "RFP submission status"]];
+const WS_TABS = [["overview", "Overview"], ["requirements", "Requirements"], ["risks", "Risks"], ["team", "Team"], ["responses", "Responses"], ["proofread", "Proofread"], ["proposal", "Proposal"], ["submission", "Submission status"]];
 
 function openWorkspace(f, target) {
   const saved = f.workspace ?? {};
   state.ws = {
     target, finding: f, title: f.title, buyer: f.buyer, url: f.url, text: f.sourceText || "", proposalText: "",
-    analysis: saved.analysis ?? null, answers: saved.answers ?? null, proposal: saved.proposal ?? null, redTeam: saved.redTeam ?? null,
+    analysis: saved.analysis ?? null, answers: saved.answers ?? null, proposal: saved.proposal ?? null, proofread: saved.proofread ?? null, redTeam: saved.redTeam ?? null,
     team: saved.teamOverride ?? f.team ?? null, tab: "overview", documentName: saved.documentName ?? null,
   };
   if (!state.ws.analysis && state.ws.text) runAnalyze(state.ws, { silent: true });
   renderSweepResults();
   renderWorkspace(state.ws);
   showOverlay(target);
+  if (!STATIC && f.rfp?.fullText) loadFullText(state.ws);
+}
+
+/** Locally, the sweep kept the full solicitation it read (notice + documents): analyze that, not the summary. */
+async function loadFullText(ws) {
+  try {
+    const r = await fetch(`/api/findings/${encodeURIComponent(ws.finding.id)}/text`);
+    if (!r.ok) return;
+    const { text } = await r.json();
+    if (!text || text.length <= (ws.text ?? "").length) return;
+    ws.text = text;
+    ws.documentName = ws.documentName ?? (ws.finding.rfp.sources ?? []).filter((x) => x.kind === "document" && !x.error).map((x) => x.name).join(", ");
+    // Re-analyze on the full text unless drafting has started on the earlier analysis.
+    if (!ws.answers && (!ws.analysis || (ws.analysis.words ?? 0) < 400)) runAnalyze(ws, { silent: true });
+    if (ws === state.ws || ws === state.aws) renderWorkspace(ws);
+  } catch { /* keep the summary */ }
 }
 
 // The opportunity workspace opens as a panel over the page, so it is visible
@@ -753,14 +944,15 @@ document.addEventListener("click", (e) => { if (e.target?.id === "sWorkspace" &&
 
 function wsMeta(ws) {
   const f = ws.finding ?? {};
-  return { sector: f.sector ?? (ws.buyer ? R().classifySector({ buyer: ws.buyer, source: f.channel }) : null), buyer: ws.buyer ?? f.buyer, publishedDate: f.publishedDate, closeDate: f.closeDate, estimatedValue: f.estimatedValue ? money(f.estimatedValue) : null, url: ws.url ?? f.url, channel: f.channel, capabilities: f.capabilities ?? R().matchCapabilities(ws.title, ws.text).slice(0, 4) };
+  return { sector: f.sector ?? (ws.buyer ? R().classifySector({ buyer: ws.buyer, source: f.channel }) : null), buyer: ws.buyer ?? f.buyer, publishedDate: f.publishedDate, closeDate: f.closeDate, estimatedValue: f.estimatedValue ? money(f.estimatedValue) : null, url: ws.url ?? f.url, channel: f.channel, capabilities: f.capabilities ?? R().matchCapabilities(ws.title, ws.text).slice(0, 4), rfp: f.rfp ?? null };
 }
 
 function runAnalyze(ws, { silent } = {}) {
   if (!ws.text || ws.text.trim().length < 40) { if (!silent) toast("There is no solicitation text yet. Upload the RFP document for this opportunity.", true); return; }
-  ws.analysis = R().analyzeRfp({ text: ws.text, title: ws.title, source: ws.url ?? "", proposalText: ws.proposalText, packs: state.meta.packs, now: new Date(), closeDate: ws.finding?.closeDate });
+  ws.analysis = R().analyzeRfp({ text: ws.text, title: ws.title, source: ws.url ?? "", proposalText: ws.proposalText, packs: state.meta.packs, profile: state.profile, buyer: ws.buyer ?? ws.finding?.buyer, now: new Date(), closeDate: ws.finding?.closeDate, known: ws.finding?.rfp ?? null });
+  ws.analysis.profileSig = profileSig();
   ws.team = ws.team ?? R().recommendTeam(R().matchCapabilities(ws.title, ws.text), state.meta.matrix);
-  ws.answers = null; ws.proposal = null; ws.redTeam = null;
+  ws.answers = null; ws.proposal = null; ws.proofread = null; ws.redTeam = null;
   persist(ws, ["analysis"]);
 }
 
@@ -768,71 +960,163 @@ function runDraft(ws) {
   if (!ws.analysis) runAnalyze(ws);
   if (!ws.analysis) return;
   ws.answers = R().draftAnswers(ws.analysis.requirements, state.meta.knowledge, { matrix: state.meta.matrix, buyer: ws.buyer ?? ws.finding?.buyer ?? "" });
-  ws.proposal = R().buildProposal(ws.analysis, ws.answers, { text: ws.text, buyer: ws.buyer ?? "" });
-  ws.redTeam = null;
+  ws.proposal = proposalFor(ws);
+  textChanged(ws);
   ws.tab = "responses";
   persist(ws, ["answers", "proposal"]);
 }
 
-function runRedTeam(ws) {
+/** The proposal draft, in the company's name when there is a profile. */
+function proposalFor(ws) {
+  return R().buildProposal(ws.analysis, ws.answers, { text: ws.text, buyer: ws.buyer ?? "", companyName: state.profile?.name ?? "", profile: state.profile?.summary ? { summary: `${state.profile.name}, from its website: ${state.profile.summary}` } : {} });
+}
+
+/** Text changed after proofreading or the submission check: both must be done again. */
+function textChanged(ws) {
+  if (ws.proofread) ws.proofread = { ...ws.proofread, stale: true, signedOff: null };
+  ws.redTeam = null;
+}
+
+/** Proofread every answer and the proposal: flags only; a person fixes and signs off. */
+function runProofread(ws) {
   if (!ws.answers) runDraft(ws);
   if (!ws.answers) return;
-  ws.redTeam = R().redTeam(ws.analysis, ws.answers, ws.proposal ?? "");
-  ws.tab = "proposal";
+  ws.proofread = { ...R().proofread(ws.answers, ws.proposal ?? "", { companyName: state.profile?.name ?? "" }), signedOff: null };
+  ws.redTeam = null;
+  ws.tab = "proofread";
+  persist(ws, ["proofread"]);
+}
+
+function signOffProofread(ws) {
+  const p = ws.proofread;
+  if (!p || p.stale) return toast("Run the proofread again first: the text changed.", true);
+  if (p.counts.high) return toast(`Fix the ${p.counts.high} high issue(s) first, then re-check.`, true);
+  p.signedOff = { by: $("#me")?.value || "a reviewer", at: new Date().toISOString() };
+  ws.redTeam = null;
+  persist(ws, ["proofread"]);
+  renderWorkspace(ws);
+  toast("Proofreading signed off. Next: RFP submission status.");
+}
+
+/** RFP submission status: the submission check, which needs a signed-off proofread. */
+function runSubmission(ws) {
+  if (!ws.answers) runDraft(ws);
+  if (!ws.answers) return;
+  const rt = R().redTeam(ws.analysis, ws.answers, ws.proposal ?? "");
+  const p = ws.proofread;
+  const gate = !p ? "Not proofread yet: run Proofread, fix what it flags and sign it off" : p.stale ? "The text changed after proofreading: proofread it again" : !p.signedOff ? `Proofreading is not signed off (${p.counts.high} high, ${p.counts.medium} medium issue(s))` : null;
+  if (gate) rt.blocking.unshift(gate);
+  rt.readiness = rt.blocking.length ? "Needs review" : "Ready";
+  ws.redTeam = rt;
+  ws.tab = "submission";
   persist(ws, ["redTeam"]);
 }
 
 let persistTimer;
 function persist(ws, what) {
-  if (STATIC || !ws.finding || ws.finding.channel === undefined) return;
+  if (STATIC || !ws.finding || ws.finding.raw || ws.finding.channel === undefined) return;
   clearTimeout(persistTimer);
   persistTimer = setTimeout(async () => {
     try {
       await fetch(`/api/findings/${ws.finding.id}/workspace?tenant=${encodeURIComponent(ws.finding.tenant ?? GENERAL)}`, {
         method: "PUT", headers: { "X-RFP-Dashboard": "1", "X-RFP-User": $("#me").value || "", "content-type": "application/json" },
-        body: JSON.stringify({ analysis: ws.analysis, answers: ws.answers, proposal: ws.proposal, redTeam: ws.redTeam, teamOverride: ws.team, documentName: ws.documentName }),
+        body: JSON.stringify({ analysis: ws.analysis, answers: ws.answers, proposal: ws.proposal, proofread: ws.proofread, redTeam: ws.redTeam, teamOverride: ws.team, documentName: ws.documentName }),
       });
     } catch (e) { toast(`Not saved: ${e.message}`, true); }
   }, 400);
 }
 
 async function patchFinding(ws, patch, msg) {
-  if (STATIC || !ws.finding) return toast("Read-only here. Use the local dashboard or the Excel sheet to change status and owners.");
+  if (!ws.finding) return;
+  const closedNow = patch.status && !OPEN_STATUSES.has(patch.status) ? " It now shows under the Closed filter." : "";
+  if (STATIC) {
+    // No server here: keep the decision in this browser, visibly, and say how to share it.
+    Object.assign(ws.finding, patch, { localEdit: new Date().toISOString() });
+    localEdits.save(ws.finding.id, patch);
+    toast(`${msg}. Saved in this browser only.${closedNow} To share it with the team, set it in the Excel and upload it to assignments/.`);
+  } else {
+    if (ws.finding.raw && !(await addToPipeline(ws))) return;
+    try {
+      const r = await fetch(`/api/findings/${ws.finding.id}?tenant=${encodeURIComponent(ws.finding.tenant ?? GENERAL)}`, { method: "PATCH", headers: { "X-RFP-Dashboard": "1", "X-RFP-User": $("#me").value || "", "content-type": "application/json" }, body: JSON.stringify(patch) });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error);
+      Object.assign(ws.finding, j);
+      toast(`${msg}.${closedNow}`);
+    } catch (e) { toast(e.message, true); }
+  }
+  renderWorkspace(ws);
+  renderSweepResults();
+}
+
+/** Pursue / No-bid, showing the decision already made. */
+function decisionRow(ws) {
+  const f = ws.finding, st = f.status ?? "New";
+  const btn = (label, status, cls) => h("button", { class: `keep decision ${cls} ${st === status ? "on" : ""}`, "aria-pressed": String(st === status),
+    onclick: () => (st === status ? patchFinding(ws, { status: "Qualifying" }, `Decision cleared: ${f.title.slice(0, 40)} is back to Qualifying`) : patchFinding(ws, { status }, `Marked ${status}`)) }, st === status ? `✓ ${label}` : label);
+  return h("div", { class: "decision-row" },
+    btn("Pursue", "Pursuing", "go"), btn("No-bid", "No-bid", "nogo"),
+    h("span", { class: "hint" }, `Status: ${st}${f.localEdit ? " (saved in this browser)" : ""}${["Pursuing", "No-bid"].includes(st) ? " · click again to undo" : ""}`));
+}
+
+/** A posting the sweep saw but no industry pack kept: add it to the pipeline so it can be worked. */
+async function addToPipeline(ws) {
+  const f = ws.finding;
   try {
-    const r = await fetch(`/api/findings/${ws.finding.id}?tenant=${encodeURIComponent(ws.finding.tenant ?? GENERAL)}`, { method: "PATCH", headers: { "X-RFP-Dashboard": "1", "X-RFP-User": $("#me").value || "", "content-type": "application/json" }, body: JSON.stringify(patch) });
+    const r = await fetch(`/api/findings?tenant=${GENERAL}`, { method: "POST", headers: { "X-RFP-Dashboard": "1", "X-RFP-User": $("#me").value || "", "content-type": "application/json" },
+      body: JSON.stringify({ title: f.title, text: ws.text || f.summary || f.title, buyer: f.buyer, url: f.url, sourceId: f.sourceId, closeDate: f.closeDate, publishedDate: f.publishedDate, noticeType: f.noticeType, country: f.country, channel: f.channel,
+        score: f._fit?.score ?? 0, band: (f._fit?.score ?? 0) >= 60 ? "pursue" : "review", reason: f._fit ? `added from the sweep: fit to ${state.profile?.name ?? "the company"} ${f._fit.score}/100` : "added from the sweep by a person" }) });
     const j = await r.json();
     if (!r.ok) throw new Error(j.error);
-    Object.assign(ws.finding, j);
-    toast(msg);
-  } catch (e) { toast(e.message, true); }
-  renderWorkspace(ws);
+    state.allLedger = await fetchLedgerFor(GENERAL);
+    ws.finding = state.allLedger.findings.find((x) => x.id === j.id) ?? j;
+    state.postings = (state.postings ?? []).filter((x) => x.id !== f.id);
+    state.sweepIds?.add(ws.finding.id);
+    toast("Added to the pipeline");
+    persist(ws, ["analysis"]);
+    renderSweepResults();
+    return true;
+  } catch (e) { toast(`Could not add it: ${e.message}`, true); return false; }
+}
+
+/** Re-score fit when the company profile changed since the analysis was made. Drafts are kept. */
+const profileSig = () => (state.profile ? strHash(JSON.stringify([state.profile.name, (state.profile.capabilities ?? []).filter((c) => c.on !== false).map((c) => c.id), state.profile.keywords, (state.profile.platforms ?? []).filter((p) => p.on !== false).map((p) => p.name), state.profile.products])) : "");
+function refreshFit(ws) {
+  const a = ws.analysis;
+  if (!a || a.profileSig === profileSig()) return;
+  a.scores = R().scoreRfp({ text: ws.text, title: a.title, buyer: ws.buyer ?? ws.finding?.buyer, requirements: a.requirements, compliance: a.compliance, risks: a.risks, keyData: a.keyData, packs: state.meta.packs, profile: state.profile, now: new Date() });
+  a.summary = R().summarize({ title: a.title, source: a.source, scores: a.scores, keyData: a.keyData, requirements: a.requirements, compliance: a.compliance, risks: a.risks });
+  a.profileSig = profileSig();
 }
 
 function renderWorkspace(ws) {
   const box = $(ws.target);
   if (!box) return;
   renderFlow(state.sweepIds && state.allLedger ? state.allLedger.findings.filter((f) => state.sweepIds.has(f.id)) : null);
+  refreshFit(ws);
   const a = ws.analysis, sc = a?.scores, f = ws.finding;
-  const done = { qualify: f && f.status !== "New", assign: !!(f?.assignee), analyze: !!a, draft: !!ws.answers, redteam: !!ws.redTeam };
+  const done = { qualify: f && f.status !== "New", assign: !!(f?.assignee), analyze: !!a, draft: !!ws.answers, proofread: !!ws.proofread?.signedOff, submission: f?.status === "Submitted" || ws.redTeam?.readiness === "Ready" };
   const act = {
     qualify: () => { ws.tab = "overview"; if (f && f.status === "New") patchFinding(ws, { status: "Qualifying" }, "Status: Qualifying"); else renderWorkspace(ws); },
     assign: () => { ws.tab = "team"; renderWorkspace(ws); },
     analyze: () => { runAnalyze(ws); ws.tab = "overview"; renderWorkspace(ws); },
     draft: () => { runDraft(ws); renderWorkspace(ws); },
-    redteam: () => { runRedTeam(ws); renderWorkspace(ws); },
+    proofread: () => { runProofread(ws); renderWorkspace(ws); if (ws.proofread) toast(`Proofread: ${ws.proofread.verdict} (${ws.proofread.counts.high} high, ${ws.proofread.counts.medium} medium, ${ws.proofread.counts.low} low)`); },
+    submission: () => { runSubmission(ws); renderWorkspace(ws); if (ws.redTeam) toast(`RFP submission status: ${f?.status === "Submitted" ? "Submitted" : ws.redTeam.readiness === "Ready" ? "Ready to submit" : `not ready, ${ws.redTeam.blocking.length} blocking issue(s)`}`); },
   };
   box.replaceChildren(h("section", { class: "card workspace", tabindex: "-1", role: "dialog", "aria-label": ws.title || "Opportunity workspace" },
     h("div", { class: "ws-head" },
       h("div", {},
         h("h2", {}, ws.title || "Untitled RFP"),
-        h("div", { class: "buyer" }, ws.buyer || "buyer not stated", f?.closeDate ? ` · closes ${f.closeDate}` : a?.keyData?.dates?.closing ? ` · closes ${a.keyData.dates.closing}` : "", ws.url ? [" · ", h("a", { href: ws.url, target: "_blank", rel: "noopener noreferrer" }, "source")] : "")),
+        h("div", { class: "buyer" }, ws.buyer || "buyer not stated", f?.status ? [" · ", h("span", { class: `tag status-tag st-${slug(f.status)}` }, f.status)] : "", f?.closeDate ? ` · closes ${f.closeDate}` : a?.keyData?.dates?.closing ? ` · closes ${a.keyData.dates.closing}` : "", ws.url ? [" · ", h("a", { href: ws.url, target: "_blank", rel: "noopener noreferrer" }, "source")] : "")),
       h("div", { class: "ws-actions" },
         h("button", { class: "keep", onclick: () => exportScoring(ws), disabled: !a }, "Export scoring file (.xlsx)"),
         h("button", { class: "keep", onclick: () => downloadText(`${slug(ws.title)}-proposal-draft.md`, ws.proposal ?? ""), disabled: !ws.proposal }, "Download proposal (.md)"),
         h("button", { class: "keep", onclick: () => { if (box.classList.contains("ws-overlay")) hideOverlay(ws.target); else box.replaceChildren(); if (ws === state.ws) { state.ws = null; renderSweepResults(); } } }, "Close ✕"))),
     h("ol", { class: "stepper" }, ...STEPS.map(([k, label], i) => h("li", { class: done[k] ? "done" : "" }, h("button", { class: "keep", onclick: act[k] }, h("span", { class: "n" }, done[k] ? "✓" : i + 1), label)))),
     ws.finding && !ws.documentName && (!ws.text || ws.text.split(/\s+/).length < 400) ? uploadPrompt(ws) : null,
-    sc ? h("div", { class: "kpis ws-kpis" }, ...[["overall", "Overall", sc.overall, sc.band], ["fit", "Fit", sc.fit], ["risk", "Risk (higher is safer)", sc.risk], ["timeline", "Timeline", sc.timeline], ...(sc.coverage != null ? [["coverage", "Coverage", sc.coverage]] : []), ["requirements", "Requirements", a.requirements.length, `${sc.mandatory} mandatory`]].map(([k, l, v, sub]) =>
+    f?.raw ? h("div", { class: "notice raw-note" }, "The sweep saw this posting, but no industry pack kept it, so it is not in the pipeline yet.",
+      STATIC ? " Use the local dashboard to add it." : [" ", h("button", { class: "primary small", onclick: async () => { if (await addToPipeline(ws)) renderWorkspace(ws); } }, "Add to pipeline")]) : null,
+    sc ? h("div", { class: "kpis ws-kpis" }, ...[["overall", "Overall", sc.overall, sc.band], ["fit", sc.company ? `Fit to ${state.profile?.name ?? "your offering"}` : "Fit", sc.fit, sc.company ? sc.company.band : "add your website"], ["risk", "Risk (higher is safer)", sc.risk], ["timeline", "Timeline", sc.timeline], ...(sc.coverage != null ? [["coverage", "Coverage", sc.coverage]] : []), ["requirements", "Requirements", a.requirements.length, `${sc.mandatory} mandatory`]].map(([k, l, v, sub]) =>
       h("button", { class: `kpi kpi-btn keep ${ws.explain === k ? "on" : ""}`, "aria-pressed": String(ws.explain === k), title: "Show what is behind this number",
         onclick: () => {
           if (k === "risk") { ws.tab = "risks"; ws.explain = null; }
@@ -841,10 +1125,21 @@ function renderWorkspace(ws) {
           renderWorkspace(ws);
           if (!ws.explain) box.querySelector(".ws-tabs")?.scrollIntoView({ behavior: "smooth", block: "start" });
         } },
-        h("div", { class: "v" }, v), h("div", { class: "l" }, l, sub ? ` · ${sub}` : ""), h("div", { class: "more" }, k === "risk" ? "See risks →" : k === "requirements" || k === "coverage" ? "See requirements →" : ws.explain === k ? "Hide ▴" : "Why? ▾")))) : null,
+        h("div", { class: `v ${k === "fit" && sc.company ? `fit-${sub}` : ""}` }, v), h("div", { class: "l" }, l, sub ? ` · ${sub}` : ""), h("div", { class: "more" }, k === "risk" ? "See risks →" : k === "requirements" || k === "coverage" ? "See requirements →" : ws.explain === k ? "Hide ▴" : "Why? ▾")))) : null,
     sc && ws.explain ? explainScore(ws) : null,
     h("nav", { class: "tabs ws-tabs" }, ...WS_TABS.map(([k, label]) => h("button", { class: `keep ${ws.tab === k ? "active" : ""}`, onclick: () => { ws.tab = k; renderWorkspace(ws); } }, label))),
     h("div", { class: "ws-body" }, wsTab(ws))));
+}
+
+/** Close the workspace and open the company profile for editing. */
+function editProfileFrom(ws) {
+  if ($(ws.target)?.classList.contains("ws-overlay")) hideOverlay(ws.target);
+  if (ws === state.ws) state.ws = null;
+  if (state.profile) state.profileEditing = true;
+  if (state.tab !== "sweep") switchTab("sweep");
+  renderCompany(); renderSweepResults();
+  $("#companyCard")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  ($("#pUrl") ?? $("#companyCard .kw-input"))?.focus();
 }
 
 /** What is behind a score tile: the reason, the inputs, and how to move it. */
@@ -863,13 +1158,28 @@ function explainScore(ws) {
           h("tr", { class: "total" }, h("td", {}, "Overall"), h("td", {}, ""), h("td", {}, "100%"), h("td", {}, sc.overall)))),
       h("p", { class: "hint" }, `70 or more is strong, 50 to 69 is worth a look, below 50 is weak. ${sc.coverage == null ? "Load your draft proposal to add a Coverage score." : ""} The score informs the go/no-go; a person decides.`),
     ];
+  } else if (ws.explain === "fit" && sc.company) {
+    const cf = sc.company, m = cf.matched, capLabel = (id) => state.meta.capabilities.find((c) => c.id === id)?.label ?? id;
+    title = `Fit to ${state.profile?.name ?? "your offering"}: ${sc.fit}/100, ${cf.band}`;
+    body = [
+      h("ul", { class: "plain" }, ...cf.reasons.map((r) => h("li", {}, r))),
+      h("table", { class: "facts explain-table" }, h("thead", {}, h("tr", {}, h("th", {}, "From your website"), h("th", {}, "Weight"), h("th", {}, "Found in this RFP"))),
+        h("tbody", {},
+          h("tr", {}, h("td", {}, "What you sell"), h("td", {}, "55"), h("td", {}, m.capabilities.length ? m.capabilities.map(capLabel).join(", ") : "none")),
+          h("tr", {}, h("td", {}, "Your terms and product names"), h("td", {}, "30"), h("td", {}, m.terms.length ? m.terms.slice(0, 8).join(", ") : "none")),
+          h("tr", {}, h("td", {}, "Platforms you work with"), h("td", {}, "15"), h("td", {}, m.platforms.length ? m.platforms.join(", ") : "none")))),
+      cf.notOffered?.length ? h("p", {}, "It asks for ", h("strong", {}, cf.notOffered.join(", ")), ", which your profile does not list. If you do offer it, add it to your profile.") : null,
+      h("p", { class: "hint" }, `60 or more is a strong fit, 40 to 59 possible, below 40 weak. Keyword matching of the RFP against the offering read from ${state.profile?.website ? "your website" : "your text"}, not a judgement of the buyer. ${(a.words ?? 0) < 400 ? "Only the notice summary was read; load the full RFP document for a firmer fit. " : ""}`,
+        h("button", { class: "keep link", onclick: () => editProfileFrom(ws) }, "Edit your profile")),
+    ];
   } else if (ws.explain === "fit") {
     const caps = wsMeta(ws).capabilities ?? [];
-    title = `Fit ${sc.fit}/100`;
+    title = `Fit ${sc.fit}/100 (general)`;
     body = [
-      h("p", {}, reason("Fit")),
+      h("p", { class: "notice" }, "Fit is not yet scored against what you sell. Add your company website in Your company (top of the RFP Sweep tab) and every RFP is scored on your product offering. ", h("button", { class: "primary small", onclick: () => editProfileFrom(ws) }, "Add my website")),
+      h("p", {}, reason("Fit").replace(/\. General capability terms.*$/, ".")),
       caps.length ? h("p", {}, "Capabilities asked for: ", ...caps.map((c) => h("span", { class: "tag" }, `${c.label}${c.matched?.length ? `: ${c.matched.slice(0, 3).join(", ")}` : ""}`))) : null,
-      h("p", { class: "hint" }, "Fit is keyword matching against the industry packs and capability terms, not a judgement of the buyer. " + ((a.words ?? 0) < 400 ? "Only the notice summary was read; load the full RFP document for a firmer fit." : "Based on the full text you loaded.")),
+      h("p", { class: "hint" }, "Until then, fit is general capability-term matching. " + ((a.words ?? 0) < 400 ? "Only the notice summary was read; load the full RFP document for a firmer fit." : "Based on the full text you loaded.")),
     ];
   } else if (ws.explain === "timeline") {
     title = `Timeline ${sc.timeline}/100`;
@@ -929,12 +1239,27 @@ function uploadPrompt(ws) {
     } catch (e) { toast(`Could not read ${file.name}: ${e.message}`, true); }
   });
   const words = ws.text ? ws.text.split(/\s+/).length : 0;
+  const docs = (ws.finding?.rfp?.sources ?? []).filter((x) => x.kind === "document" && !x.error && x.url);
+  if (docs.length) return h("div", { class: "notice" }, `The sweep read ${docs.length === 1 ? "the RFP document" : `${docs.length} RFP documents`} for the key facts (${docs.map((d) => d.name).join(", ")}). For every requirement and question, download `, ...docs.map((d, i) => [i ? ", " : "", h("a", { href: d.url, target: "_blank", rel: "noopener noreferrer" }, d.name)]), " and load it here (read in your browser, not uploaded): ", input);
   return h("div", { class: "notice" }, words ? `Only the notice summary is available (${words} words). ` : "No solicitation text yet. ",
     "For a full analysis, download the RFP from the source and load it here (read in your browser, not uploaded): ", input);
 }
 
+/** What was read with the RFP: the notice and each public document, with pages, words or why not. */
+function readWithRfp(ws) {
+  const r = ws.finding?.rfp;
+  if (!r) return null;
+  return h("div", { class: "read-with" },
+    h("h3", { class: "mt" }, "Read with the RFP"),
+    h("ul", { class: "plain" }, ...(r.sources ?? []).map((x) => h("li", {},
+      x.kind === "notice" ? ["Notice", x.url ? [" · ", h("a", { href: x.url, target: "_blank", rel: "noopener noreferrer" }, "source")] : "", x.words ? ` · ${x.words.toLocaleString()} words` : ""]
+        : [x.url ? h("a", { href: x.url, target: "_blank", rel: "noopener noreferrer" }, x.name) : x.name, x.error ? h("span", { class: "hint" }, ` · not read: ${x.error}`) : h("span", { class: "hint" }, ` · ${x.pages ? `${x.pages} pages, ` : ""}${(x.words ?? 0).toLocaleString()} words`)])),
+      ...(r.notes ?? []).map((n) => h("li", { class: "hint" }, n))),
+    h("p", { class: "hint" }, `Read by the sweep ${String(r.readAt ?? "").slice(0, 10)}. Public documents only; the sweeper never signs in.`));
+}
+
 function wsTab(ws) {
-  const a = ws.analysis;
+  const a = ws.analysis, f = ws.finding;
   if (!a) return h("p", { class: "empty" }, "Press Analyze RFP. If there is no text yet, load the RFP document above.");
   const q = R().qualify(a, wsMeta(ws));
   const list = (items, cls = "") => h("ul", { class: `plain ${cls}` }, ...items.map((x) => h("li", {}, x)));
@@ -947,12 +1272,12 @@ function wsTab(ws) {
         h("h3", { class: "mt" }, "Why we may not qualify"), list(q.mayNotQualify),
         h("h3", { class: "mt" }, "Information still required"), list(q.infoRequired.length ? q.infoRequired : ["Nothing obvious missing."]),
         h("h3", { class: "mt" }, "Recommended next action"), h("p", { class: "next" }, q.nextAction),
-        ws.finding ? h("div", { class: "row" },
-          h("button", { class: "keep", onclick: () => patchFinding(ws, { status: "Pursuing" }, "Marked Pursuing") }, "Pursue"),
-          h("button", { class: "keep", onclick: () => patchFinding(ws, { status: "No-bid" }, "Marked No-bid") }, "No-bid")) : null),
+        ws.finding && !ws.finding.raw ? decisionRow(ws) : ws.finding?.raw ? h("p", { class: "hint" }, STATIC ? "Not in the pipeline yet, so there is no decision to record here." : "Pursue or No-bid adds it to the pipeline first.") : null,
+        ws.finding?.raw && !STATIC ? decisionRow(ws) : null),
       h("div", {},
         h("h3", {}, "Verified, from the source"),
         h("table", { class: "facts" }, h("tbody", {}, ...q.verified.map((v) => h("tr", {}, h("th", {}, v.label), h("td", {}, v.value, h("span", { class: "hint" }, ` · ${v.from}`)))))),
+        readWithRfp(ws),
         h("h3", { class: "mt" }, "Inferred by this tool"),
         h("table", { class: "facts inferred" }, h("tbody", {}, ...q.inferred.map((v) => h("tr", {}, h("th", {}, v.label), h("td", {}, v.value, h("span", { class: "hint" }, ` · ${v.how}`)))))),
         h("h3", { class: "mt" }, "Evaluator summary"),
@@ -980,8 +1305,8 @@ function wsTab(ws) {
         h("thead", {}, h("tr", {}, ...["Requirement", "Draft", "Sources", "Confidence", "Owner", "Status"].map((x) => h("th", {}, x)))),
         h("tbody", {}, ...ws.answers.map((x) => {
           const ta = h("textarea", { class: "keep", value: x.draft, "aria-label": `Draft for ${x.reqId}` });
-          ta.addEventListener("change", () => { x.draft = ta.value; if (x.status === "Not started") x.status = "Drafted"; ws.proposal = R().buildProposal(a, ws.answers, { text: ws.text, buyer: ws.buyer ?? "" }); persist(ws, ["answers"]); });
-          const st = h("select", { class: "keep", "aria-label": "Response status", onchange: (e) => { x.status = e.target.value; ws.proposal = R().buildProposal(a, ws.answers, { text: ws.text, buyer: ws.buyer ?? "" }); persist(ws, ["answers"]); } }, ...state.meta.responseStatuses.map((v) => h("option", { value: v, selected: v === x.status }, v)));
+          ta.addEventListener("change", () => { x.draft = ta.value; if (x.status === "Not started") x.status = "Drafted"; ws.proposal = proposalFor(ws); textChanged(ws); persist(ws, ["answers"]); });
+          const st = h("select", { class: "keep", "aria-label": "Response status", onchange: (e) => { x.status = e.target.value; ws.proposal = proposalFor(ws); textChanged(ws); persist(ws, ["answers"]); } }, ...state.meta.responseStatuses.map((v) => h("option", { value: v, selected: v === x.status }, v)));
           return h("tr", {},
             h("td", {}, h("strong", {}, x.reqId), x.level === "mandatory" ? h("span", { class: "tag" }, "mandatory") : null, h("div", { class: "buyer" }, reqById[x.reqId]?.text ?? "")),
             h("td", {}, ta),
@@ -991,31 +1316,81 @@ function wsTab(ws) {
         })))));
     case "risks": return a.risks.length ? h("ul", { class: "risk-list" }, ...a.risks.map((r) => h("li", { class: `sev-${r.severity}` }, h("strong", {}, `${r.severity.toUpperCase()}: ${r.label}`), h("div", { class: "hint" }, r.evidence)))) : h("p", { class: "empty" }, "No risk patterns found. Legal still reviews the terms.");
     case "team": {
-      const t = ws.team ?? R().recommendTeam(R().matchCapabilities(ws.title, ws.text), state.meta.matrix);
-      const roles = [["opportunityOwner", "Opportunity owner"], ["bidManager", "Bid manager"], ["solutionLead", "Solution lead"], ["technicalLead", "Technical lead"], ["commercialOwner", "Commercial owner"], ["executiveSponsor", "Executive sponsor"]];
+      // The four roles on every bid. Saved overrides from before the four-role model fall back to the defaults.
+      const rec = R().recommendTeam(R().matchCapabilities(ws.title, ws.text), state.meta.matrix);
+      const t = ws.team?.rfpManager ? { ...rec, ...ws.team } : rec;
+      const caps = (wsMeta(ws).capabilities ?? []).slice(0, 3).map((c) => c.label).join(", ");
+      const areas = (t.smeAreas ?? rec.smeAreas ?? []).join(", ");
+      const roles = [
+        ["rfpManager", "RFP Manager", "Owns the response: plan, compliance matrix, proofreading and submission."],
+        ["presales", "Pre-sales Consultant", `Solution and technical answers${caps ? `: ${caps}` : ""}.`],
+        ["accountExecutive", "Account Executive", "Customer relationship, go/no-go, references and pricing sign-off."],
+        ["sme", "SME Contributor", `Subject answers${areas ? ` for ${areas}` : ""}.`],
+      ];
       return h("div", {},
-        h("p", { class: "hint" }, `Recommended from the capability matrix (config/capability-matrix.json). ${t.why ?? ""} Roles only; override any of them.`),
-        h("table", { class: "facts" }, h("tbody", {}, ...roles.map(([k, l]) => {
-          const inp = h("input", { class: "keep", list: "team", value: t[k] ?? "", "aria-label": l });
-          inp.addEventListener("change", () => { ws.team = { ...t, [k]: inp.value.trim() }; persist(ws, ["teamOverride"]); });
-          return h("tr", {}, h("th", {}, l), h("td", {}, inp));
-        }), h("tr", {}, h("th", {}, "SME contributors"), h("td", {}, (t.smes ?? []).join(", ") || "—")))),
-        ws.finding ? h("div", { class: "row" }, h("button", { class: "primary keep", onclick: () => patchFinding(ws, { assignee: t.opportunityOwner }, `Assigned to ${t.opportunityOwner}`) }, `Assign opportunity to ${t.opportunityOwner}`)) : null);
+        h("p", { class: "hint" }, `Four roles on every bid, recommended from the capability matrix (config/capability-matrix.json). ${t.why ?? ""}. Roles only, never names; write a more specific role if you need one.`),
+        h("table", { class: "facts team-table" }, h("thead", {}, h("tr", {}, h("th", {}, "Role"), h("th", {}, "On this bid"), h("th", {}, "Assigned role"))),
+          h("tbody", {}, ...roles.map(([k, label, what]) => {
+            const inp = h("input", { class: "keep", list: "team", value: t[k] ?? label, "aria-label": label });
+            inp.addEventListener("change", () => { ws.team = { ...t, [k]: inp.value.trim() || label }; persist(ws, ["teamOverride"]); toast(`${label}: ${ws.team[k]}`); });
+            return h("tr", {}, h("th", {}, label), h("td", {}, what), h("td", {}, inp));
+          }))),
+        ws.finding ? h("div", { class: "row" }, h("button", { class: "primary keep", onclick: () => patchFinding(ws, { assignee: t.rfpManager ?? "RFP Manager" }, `Assigned to ${t.rfpManager ?? "RFP Manager"}`) }, `Assign opportunity to ${t.rfpManager ?? "RFP Manager"}`)) : null);
     }
     case "proposal": {
       if (!ws.proposal) return h("div", {}, h("p", { class: "empty" }, "Press Draft response to build the first draft."), h("button", { class: "primary keep", onclick: () => { runDraft(ws); ws.tab = "proposal"; renderWorkspace(ws); } }, "Draft response"));
       const ta = h("textarea", { class: "draft keep", value: ws.proposal, "aria-label": "Proposal draft" });
-      ta.addEventListener("change", () => { ws.proposal = ta.value; ws.redTeam = null; persist(ws, ["proposal"]); renderWorkspace(ws); });
-      const rt = ws.redTeam;
-      return h("div", { class: "detail-grid" },
-        h("div", {}, h("h3", {}, "Proposal draft"), ta),
-        h("div", {},
-          h("h3", {}, "Red-team readiness"),
-          rt ? h("div", {},
-            h("p", { class: `readiness ${rt.readiness === "Ready" ? "ok" : "bad"}` }, `RFP readiness: ${rt.readiness}`),
-            rt.blocking.length ? [h("h4", {}, "Blocking"), list(rt.blocking, "blocking")] : null,
-            rt.warnings.length ? [h("h4", {}, "Warnings"), list(rt.warnings)] : null,
-            h("p", { class: "hint" }, rt.note)) : h("button", { class: "primary keep", onclick: () => { runRedTeam(ws); renderWorkspace(ws); } }, "Run red-team check")));
+      ta.addEventListener("change", () => { ws.proposal = ta.value; textChanged(ws); persist(ws, ["proposal"]); renderWorkspace(ws); });
+      return h("div", {}, h("h3", {}, "Proposal draft"), h("p", { class: "hint" }, "Edit here. Any change means proofreading and the submission status are checked again."), ta,
+        h("div", { class: "row" }, h("button", { class: "primary keep", onclick: () => { runProofread(ws); renderWorkspace(ws); } }, "Next: Proofread")));
+    }
+    case "proofread": {
+      if (!ws.answers) return h("div", {}, h("p", { class: "empty" }, "Draft the response first, then proofread it."), h("button", { class: "primary keep", onclick: () => { runDraft(ws); renderWorkspace(ws); } }, "Draft response"));
+      const p = ws.proofread;
+      if (!p) return h("div", {}, h("p", {}, "Checks every answer and the proposal for placeholders left in, misspellings, doubled words, mixed spellings, undefined acronyms, long sentences, spacing and generic phrasing. It flags; you fix the text and sign off."),
+        h("button", { class: "primary keep", onclick: () => { runProofread(ws); renderWorkspace(ws); } }, "Run proofread"));
+      const sev = (x) => h("span", { class: `sev sev-${x}` }, x);
+      return h("div", { class: "proofread" },
+        h("div", { class: "proof-head" },
+          h("p", { class: `readiness ${p.counts.high ? "bad" : p.counts.medium ? "warn" : "ok"}` }, `Proofread: ${p.verdict}`),
+          h("span", { class: "counts" }, h("span", { class: "pill sev-high" }, `${p.counts.high} high`), " ", h("span", { class: "pill sev-medium" }, `${p.counts.medium} medium`), " ", h("span", { class: "pill sev-low" }, `${p.counts.low} low`)),
+          h("span", { class: "hint" }, `${p.stats.words.toLocaleString()} words · ${p.stats.sentences} sentences · ${p.stats.avgWords} words per sentence on average`)),
+        p.stale ? h("p", { class: "notice" }, "The text changed after this proofread. Run it again before signing off.") : null,
+        p.signedOff ? h("p", { class: "notice ok-note" }, `Signed off by ${p.signedOff.by} on ${String(p.signedOff.at).slice(0, 10)}.`) : null,
+        p.issues.length ? h("div", { class: "tablewrap" }, h("table", { class: "grid proof-issues" },
+          h("thead", {}, h("tr", {}, ...["Severity", "Where", "Issue", "Text", "What to do"].map((x) => h("th", {}, x)))),
+          h("tbody", {}, ...p.issues.map((i) => h("tr", {}, h("td", {}, sev(i.severity)), h("td", {}, /^Answer /.test(i.where) ? h("button", { class: "keep link", title: "Open the Responses tab", onclick: () => { ws.tab = "responses"; renderWorkspace(ws); } }, i.where) : i.where), h("td", {}, i.kind), h("td", { class: "proof-text" }, i.text), h("td", {}, i.suggestion))))))
+          : h("p", { class: "empty" }, "No issues found."),
+        h("div", { class: "row" },
+          h("button", { class: "keep", onclick: () => { runProofread(ws); renderWorkspace(ws); toast(`Proofread again: ${ws.proofread.verdict}`); } }, "Re-check"),
+          h("button", { class: "primary keep", disabled: !!(p.counts.high || p.stale || p.signedOff), title: p.counts.high ? "Fix the high issues first" : p.stale ? "Run the proofread again first" : "", onclick: () => signOffProofread(ws) }, p.signedOff ? "✓ Signed off" : "Sign off proofreading"),
+          p.signedOff ? h("button", { class: "primary keep", onclick: () => { runSubmission(ws); renderWorkspace(ws); } }, "Next: RFP submission status") : null),
+        h("p", { class: "hint" }, p.note));
+    }
+    case "submission": {
+      const rt = ws.redTeam, st = f?.status;
+      const submitted = st === "Submitted";
+      const headline = submitted ? "Submitted" : rt ? (rt.readiness === "Ready" ? "Ready to submit" : `Not ready: ${rt.blocking.length} blocking issue(s)`) : "Not checked yet";
+      const proof = ws.proofread;
+      const checks = [
+        ["Proofread and signed off", !!proof?.signedOff && !proof.stale, proof?.signedOff ? `by ${proof.signedOff.by}, ${String(proof.signedOff.at).slice(0, 10)}` : proof ? (proof.stale ? "text changed since" : "not signed off") : "not run"],
+        ["Mandatory answers Approved or Final", ws.answers ? !ws.answers.some((x) => (x.level === "mandatory" || x.level === "question") && !["Approved", "Final"].includes(x.status)) : false, ws.answers ? `${ws.answers.filter((x) => ["Approved", "Final"].includes(x.status)).length} of ${ws.answers.length} approved or final` : "no answers yet"],
+        ["No SME markers or placeholders left", ws.proposal ? !/\[SME validation required\]|\[TODO/.test(ws.proposal) : false, ""],
+      ];
+      return h("div", { class: "submission" },
+        h("h3", {}, "RFP submission status"),
+        h("p", { class: `readiness ${submitted || rt?.readiness === "Ready" ? "ok" : "bad"}` }, headline),
+        h("ul", { class: "plain checklist" }, ...checks.map(([label, ok, note]) => h("li", { class: ok ? "ok" : "no" }, h("span", { class: "tick", "aria-hidden": "true" }, ok ? "✓" : "✗"), ` ${label}`, note ? h("span", { class: "hint" }, ` · ${note}`) : null))),
+        rt?.blocking.length ? [h("h4", {}, "Blocking"), list(rt.blocking, "blocking")] : null,
+        rt?.warnings.length ? [h("h4", {}, "Warnings"), list(rt.warnings)] : null,
+        h("div", { class: "row" },
+          h("button", { class: rt ? "keep" : "primary keep", onclick: () => { runSubmission(ws); renderWorkspace(ws); toast(`RFP submission status: ${ws.redTeam.readiness === "Ready" ? "Ready to submit" : `not ready, ${ws.redTeam.blocking.length} blocking issue(s)`}`); } }, rt ? "Check again" : "Check submission status"),
+          f && !submitted ? h("button", { class: "primary keep", onclick: () => {
+            if (rt?.readiness !== "Ready" && !confirm(`The submission status is not Ready (${rt ? `${rt.blocking.length} blocking issue(s)` : "not checked"}). Mark it as submitted anyway?`)) return;
+            patchFinding(ws, { status: "Submitted" }, "Marked Submitted");
+          } }, "Mark as submitted") : null,
+          f && submitted ? h("button", { class: "keep", onclick: () => patchFinding(ws, { status: "Drafting" }, "Submission undone: back to Drafting") }, "Undo submitted") : null),
+        h("p", { class: "hint" }, "Nothing is sent from this tool. Submit through the buyer's portal or as the RFP instructs, then mark it here."));
     }
   }
 }
@@ -1092,8 +1467,8 @@ async function importSmeReview(ws, input) {
     await loadScript("vendor/exceljs.min.js");
     const parsed = await R().parseSmeReviewWorkbook(window.ExcelJS, await file.arrayBuffer());
     const n = R().applySmeReview(ws.answers, parsed.rows);
-    ws.proposal = R().buildProposal(ws.analysis, ws.answers, { text: ws.text, buyer: ws.buyer ?? "" });
-    ws.redTeam = null;
+    ws.proposal = proposalFor(ws);
+    textChanged(ws);
     persist(ws, ["answers", "proposal"]);
     renderWorkspace(ws);
     toast(`${n} of ${ws.answers.length} answer(s) updated from the SME review`);
@@ -1104,7 +1479,7 @@ async function exportScoring(ws) {
   if (!ws.analysis) return;
   try {
     await loadScript("vendor/exceljs.min.js");
-    const wb = await R().buildAnalysisWorkbook(window.ExcelJS, ws.analysis, { answers: ws.answers, redTeam: ws.redTeam, team: ws.team, proposal: ws.proposal });
+    const wb = await R().buildAnalysisWorkbook(window.ExcelJS, ws.analysis, { answers: ws.answers, proofread: ws.proofread, redTeam: ws.redTeam, team: ws.team, proposal: ws.proposal });
     const buf = await wb.xlsx.writeBuffer();
     downloadBlob(`${slug(ws.title)}-rfp-scoring.xlsx`, new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
     toast("Scoring file downloaded");

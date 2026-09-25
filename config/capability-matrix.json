@@ -1,69 +1,58 @@
 {
-  "$comment": "Capability → owner roles. Roles only, never people. Edit to match your practices; the Route step and the requirement owners use it.",
+  "$comment": "The four roles on every bid, and who owns which kind of requirement. Roles only, never people. Edit the area names to match your practices.",
   "roles": {
-    "opportunityOwner": "Sales Exec",
-    "commercialOwner": "Commercial Lead",
-    "executiveSponsor": "Practice Director",
-    "technicalLead": "Solutions Architect",
-    "bidManager": "RFP Manager"
+    "rfpManager": "RFP Manager",
+    "presales": "Pre-sales Consultant",
+    "accountExecutive": "Account Executive",
+    "sme": "SME Contributor"
   },
   "byCapability": {
     "erp": {
-      "solutionLead": "Finance Practice Lead",
-      "sme": "Finance Practice SME"
+      "area": "ERP / Finance implementation"
     },
     "hcm": {
-      "solutionLead": "HR Practice Lead",
-      "sme": "HR Practice SME"
+      "area": "HR / HCM implementation"
     },
     "payroll": {
-      "solutionLead": "Payroll Practice Lead",
-      "sme": "Payroll Practice SME"
+      "area": "Payroll implementation"
     },
     "sis": {
-      "solutionLead": "Education Practice Lead",
-      "sme": "Education Practice SME"
+      "area": "Student information system"
     },
     "integration": {
-      "solutionLead": "Technical Services Lead",
-      "sme": "Technical Services SME"
+      "area": "System integration"
     },
     "migration": {
-      "solutionLead": "Data Practice Lead",
-      "sme": "Data Practice SME"
+      "area": "Data migration"
     },
     "saas": {
-      "solutionLead": "Implementation Services Lead",
-      "sme": "Implementation Services SME"
+      "area": "SaaS implementation"
     },
     "managed": {
-      "solutionLead": "Support / Customer Success Lead",
-      "sme": "Support / Customer Success SME"
+      "area": "Managed services / support"
     },
     "consulting": {
-      "solutionLead": "Professional Services Lead",
-      "sme": "Professional Services SME"
+      "area": "Professional services / consulting"
     },
     "tms": {
-      "solutionLead": "Logistics Practice Lead",
-      "sme": "Logistics Practice SME"
+      "area": "Courier / delivery management software"
     }
   },
   "byCategory": {
-    "security": "Security SME",
-    "legal": "Legal",
-    "insurance": "Legal",
-    "pricing": "Commercial Lead",
-    "data": "Data Practice SME",
-    "integration": "Technical Services SME",
-    "implementation": "Delivery Lead",
-    "training": "Training Lead",
-    "support": "Support / Customer Success",
+    "security": "Pre-sales Consultant",
+    "legal": "Account Executive",
+    "insurance": "Account Executive",
+    "pricing": "Account Executive",
+    "data": "Pre-sales Consultant",
+    "integration": "Pre-sales Consultant",
+    "implementation": "Pre-sales Consultant",
+    "training": "SME Contributor",
+    "support": "SME Contributor",
     "format": "RFP Manager",
     "form": "RFP Manager",
-    "experience": "RFP Manager",
-    "accessibility": "Delivery Lead",
-    "functional": "Solution Lead",
+    "experience": "Account Executive",
+    "accessibility": "Pre-sales Consultant",
+    "functional": "SME Contributor",
     "general": "RFP Manager"
   }
 }

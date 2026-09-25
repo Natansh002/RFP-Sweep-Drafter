@@ -13,7 +13,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { ROOT, tenantIds, loadTenant } from "../lib/config.mjs";
-import { loadLedger, STATUSES, COMPLIANCE_STATUSES, DEFAULT_GO_NO_GO } from "../lib/ledger.mjs";
+import { loadLedger, readStore, STATUSES, COMPLIANCE_STATUSES, DEFAULT_GO_NO_GO } from "../lib/ledger.mjs";
 import { workbookBuffer } from "../lib/excel.mjs";
 import { buildCalendar } from "../lib/ics.mjs";
 import { findBlocked } from "../lib/guard.mjs";
@@ -48,6 +48,11 @@ for (const id of tenantIds()) {
     updatedAt: ledger.updatedAt,
   });
 }
+
+// Every posting the latest sweep saw, so a company profile can be matched against all of them.
+const postings = readStore(ROOT, "postings.json", { postings: [] });
+if (findBlocked(postings, "postings").length) throw new Error("Refusing to publish postings that link to an internal tool.");
+fs.writeFileSync(path.join(OUT, "data", "postings.json"), JSON.stringify(postings));
 
 const meta = {
   mode: "static",

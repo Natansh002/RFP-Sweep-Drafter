@@ -15,7 +15,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { ROOT, tenantIds, loadTenant } from "../lib/config.mjs";
-import { loadLedger, saveLedger, mergeRun } from "../lib/ledger.mjs";
+import { loadLedger, saveLedger, mergeRun, readStore, writeStore, mergePostings, writeTexts } from "../lib/ledger.mjs";
 import { importWorkbook } from "../lib/excel.mjs";
 import { runSweep } from "../lib/sweep.mjs";
 import { closeBrowser } from "../lib/browser.mjs";
@@ -62,8 +62,10 @@ for (const id of tenantIds()) {
   if (SWEEP) {
     for (const ind of tenant.industries) {
       try {
-        const run = await runSweep(id, ind, { width, source: "github-actions" });
+        const run = await runSweep(id, ind, { width, source: "github-actions", docsRead: Object.fromEntries(ledger.findings.filter((f) => f.rfp?.readAt).map((f) => [f.id, f.rfp.readAt])) });
         const { added, refreshed } = mergeRun(ledger, run);
+        writeTexts(ROOT, run.texts); // kept on the runner for this build; never published
+        if (id === "all") writeStore(ROOT, "postings.json", mergePostings(readStore(ROOT, "postings.json"), run.raw));
         console.log(`${ind}: ${run.postingsSeen} link(s), ${added} new, ${refreshed} refreshed, ${run.gaps.length} gap(s)${run.halted ? `, HALTED: ${run.haltReason}` : ""}`);
       } catch (e) {
         console.log(`${ind}: sweep failed — ${e.message}`);

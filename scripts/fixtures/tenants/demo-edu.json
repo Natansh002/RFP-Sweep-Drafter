@@ -36,23 +36,22 @@
         "Demo ERP - Finance + HR",
         "Demo SIS"
       ],
-      "defaultAssignee": "K-12 Sales Exec",
+      "defaultAssignee": "Account Executive",
       "pitch": ""
     },
     "nonprofit": {
       "productLines": [
         "Demo Nonprofit ERP"
       ],
-      "defaultAssignee": "Nonprofit Sales Exec",
+      "defaultAssignee": "Account Executive",
       "pitch": ""
     }
   },
   "team": [
     "RFP Manager",
-    "K-12 Sales Exec",
-    "Nonprofit Sales Exec",
-    "Bid Writer",
-    "Solutions Consultant"
+    "Pre-sales Consultant",
+    "Account Executive",
+    "SME Contributor"
   ],
   "owners": {
     "default": "RFP Manager"

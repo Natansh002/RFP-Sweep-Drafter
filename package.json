@@ -16,7 +16,7 @@
     "validate": "node scripts/validate.mjs",
     "validate:strict": "node scripts/validate.mjs --strict",
     "build": "node scripts/build-workflows.mjs",
-    "test": "RFP_TENANTS_DIR=scripts/fixtures/tenants node scripts/test-score.mjs && RFP_TENANTS_DIR=scripts/fixtures/tenants node scripts/test-app.mjs && RFP_TENANTS_DIR=scripts/fixtures/tenants node scripts/test-analyze.mjs",
+    "test": "RFP_TENANTS_DIR=scripts/fixtures/tenants node scripts/test-score.mjs && RFP_TENANTS_DIR=scripts/fixtures/tenants node scripts/test-app.mjs && RFP_TENANTS_DIR=scripts/fixtures/tenants node scripts/test-analyze.mjs && RFP_TENANTS_DIR=scripts/fixtures/tenants node scripts/test-profile.mjs && RFP_TENANTS_DIR=scripts/fixtures/tenants node scripts/test-documents.mjs",
     "check": "npm run build && npm run validate && npm test",
     "deploy:n8n": "node scripts/deploy-n8n.mjs",
     "site": "node scripts/build-site.mjs",

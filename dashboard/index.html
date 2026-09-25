@@ -27,7 +27,6 @@
     <button role="tab" data-tab="analyze">Analyze a document</button>
     <button role="tab" data-tab="findings">Pipeline</button>
     <button role="tab" data-tab="actions">Action items</button>
-    <button role="tab" data-tab="coverage">Coverage &amp; runs</button>
   </nav>
 
   <section class="toolbar pipeline-only" hidden>
@@ -60,10 +59,11 @@
           <li data-step="qualify"><span class="ico" aria-hidden="true">◎</span><strong>Qualify</strong><span class="what">Fit, risk and timeline scores with reasons; verified vs inferred</span><span class="stat" id="flowQualify"></span></li>
           <li data-step="assign"><span class="ico" aria-hidden="true">⚑</span><strong>Assign</strong><span class="what">Recommends owner, leads and SMEs by role from the capability matrix</span><span class="stat" id="flowAssign"></span></li>
           <li data-step="answer"><span class="ico" aria-hidden="true">✎</span><strong>Answer</strong><span class="what">Drafts from approved answers only, cited; otherwise SME validation</span><span class="stat" id="flowAnswer"></span></li>
-          <li data-step="review"><span class="ico" aria-hidden="true">⛨</span><strong>Review</strong><span class="what">Red-team check: Ready or Needs review, with blocking issues</span><span class="stat" id="flowReview"></span></li>
+          <li data-step="review"><span class="ico" aria-hidden="true">⛨</span><strong>Proofread &amp; submit</strong><span class="what">Proofreading, then the RFP submission status: ready to submit, or what blocks it</span><span class="stat" id="flowReview"></span></li>
           <li data-step="export"><span class="ico" aria-hidden="true">⇩</span><strong>Export</strong><span class="what">Scoring file (.xlsx) and proposal draft. Nothing is sent anywhere</span><span class="stat" id="flowExport"></span></li>
         </ol>
       </section>
+      <section class="card company-card" id="companyCard" aria-label="Your company"></section>
       <div class="card sweep-card">
         <h2>What are you looking for?</h2>
         <div class="sweep-form">
@@ -144,13 +144,6 @@
       <p class="empty" id="actionsEmpty" hidden>No action items.</p>
     </section>
 
-    <section id="tab-coverage" class="tab" hidden>
-      <h2>Coverage gaps</h2>
-      <p class="hint">Channels the last sweep could not read. A gap is a blind spot, not "no opportunities".</p>
-      <div class="tablewrap"><table class="grid" id="gaps"><thead><tr><th>Industry</th><th>Channel</th><th>Status</th><th>Detail</th></tr></thead><tbody></tbody></table></div>
-      <h2>Runs</h2>
-      <div class="tablewrap"><table class="grid" id="runs"><thead><tr><th>When</th><th>Industry</th><th>Source</th><th class="num">Seen</th><th class="num">Pursue</th><th class="num">Review</th><th class="num">New</th><th class="num">Gaps</th><th>Note</th></tr></thead><tbody></tbody></table></div>
-    </section>
   </main>
 
   <datalist id="team"></datalist>

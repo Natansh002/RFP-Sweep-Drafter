@@ -77,6 +77,15 @@ const F = [
   finding("any", { title: "ERP Implementation Services (past due)", buyer: "Town of Pastdue", country: "CA", closeDate: day(-5), publishedDate: day(-40), url: "https://www.merx.com/public/solicitations/3", channel: "ca.agg.merx", body: "ERP implementation services for finance and payroll. The proponent must provide references." }),
   finding("any", { title: "Financial System Replacement (won)", buyer: "City of Wonville", country: "CA", closeDate: day(-20), publishedDate: day(-60), url: "https://www.merx.com/public/solicitations/4", channel: "ca.agg.merx", body: "Financial system replacement, ERP implementation, general ledger." }),
 ];
+// What the sweep read with the HRIS RFP (its public document), as lib/sweep.mjs stores it.
+F[1].rfp = {
+  readAt: new Date().toISOString(),
+  sources: [{ kind: "notice", url: "https://www.merx.com/public/solicitations/2", words: 20 }, { kind: "document", name: "HRIS-RFP-2026-9.pdf", url: "https://canadabuys.canada.ca/documents/pub/att/2026/09/01/abc/HRIS-RFP-2026-9.pdf", pages: 22, words: 6400 }],
+  keyData: { dates: { questions: day(4) }, contractTerm: "3 years", renewals: "two (2) additional one-year periods", value: { amount: 450000, context: "estimated" }, evaluation: [{ criterion: "Technical approach", weight: 60, unit: "%" }, { criterion: "Price", weight: 40, unit: "%" }], evaluationBasis: "Highest combined rating of technical merit and price" },
+  risks: [{ id: "insurance-high", severity: "medium", label: "Insurance of $5M or more", evidence: "general liability insurance of $5,000,000" }],
+  requirements: [{ id: "2.1", section: "2", text: "Describe your approach to payroll parallel testing before go-live.", level: "question", category: "technical" }],
+  requirementCounts: { total: 41, mandatory: 30, questions: 11 }, fullText: true, words: 6420, notes: [],
+};
 const ledger = { tenant: "all", findings: [], runs: [], gaps: [] };
 process.env.RFP_STORE_DIR = STORE;
 mergeRun(ledger, { industry: "any", findings: F, gaps: [{ channel: "ca.bc.bcbid", status: "blocked-by-portal", detail: "bot check" }], channelsRead: 5, postingsSeen: 200 });
@@ -114,14 +123,31 @@ async function openPage(url) {
   const page = await context.newPage();
   const errors = [];
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
-  // 403 comes from the deliberate security probe below; anything else is a real error.
-  page.on("console", (m) => { if (m.type() === "error" && !/favicon|404 \(Not Found\)|403 \(Forbidden\)/.test(m.text())) errors.push(`console: ${m.text()}`); });
+  // 403 and 400 come from the deliberate security probes (a write without the header, a private
+  // address as the company website); server errors are caught by the response listener below.
+  page.on("console", (m) => { if (m.type() === "error" && !/favicon|404 \(Not Found\)|403 \(Forbidden\)|400 \(Bad Request\)|422 \(Unprocessable|500 \(Internal Server Error\)/.test(m.text())) errors.push(`console: ${m.text()}`); });
+  // A server error is always a failure; name the request so it can be fixed.
+  page.on("response", async (r) => { if (r.status() >= 500) errors.push(`HTTP ${r.status()} ${r.request().method()} ${new URL(r.url()).pathname}: ${(await r.text().catch(() => "")).slice(0, 160)}`); });
   await page.goto(url);
   await page.waitForSelector("#sRun");
   await page.waitForTimeout(600);
   return { page, errors, context };
 }
 const toastText = (page) => page.locator("#toast").textContent();
+/** The toast a person sees: shown, on top of everything at its centre (not under the workspace), saying this. */
+async function seenToast(page, re) {
+  await page.waitForTimeout(120);
+  const r = await page.evaluate(() => {
+    const t = document.getElementById("toast");
+    if (!t?.classList.contains("show")) return { shown: false, text: t?.textContent ?? "" };
+    const b = t.getBoundingClientRect();
+    const top = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+    return { shown: true, onTop: !!top && (top === t || t.contains(top)), text: t.textContent };
+  });
+  expect(r.shown, `no toast shown (last text: "${r.text}")`);
+  expect(r.onTop, `the toast is hidden under another element: "${r.text}"`);
+  expect(re.test(r.text), `toast says "${r.text}"`);
+}
 async function download(page, action) {
   const [d] = await Promise.all([page.waitForEvent("download", { timeout: 10000 }), action()]);
   const file = path.join(DL, d.suggestedFilename());
@@ -135,10 +161,12 @@ async function suite(mode, url) {
   const { page, errors, context } = await openPage(url);
   const P = (n) => `[${mode}] ${n}`;
   const isStatic = mode === "published site";
+  page.on("dialog", (d) => d.accept());
 
   await check(P("loads with the workflow strip and 7 steps"), async () => expect((await page.locator("#flowSteps li").count()) === 7, "flow steps missing"));
   await check(P("every main tab opens its screen"), async () => {
-    for (const t of ["analyze", "findings", "actions", "coverage", "sweep"]) { await tab(page, t); expect(await page.locator(`#tab-${t}`).isVisible(), `tab ${t} not visible`); }
+    for (const t of ["analyze", "findings", "actions", "sweep"]) { await tab(page, t); expect(await page.locator(`#tab-${t}`).isVisible(), `tab ${t} not visible`); }
+    expect((await page.locator(".main-tabs button").allTextContents()).join("|") === "RFP Sweep|Analyze a document|Pipeline|Action items", "the main tabs are not exactly RFP Sweep, Analyze a document, Pipeline, Action items");
   });
   await check(P("sweep form filters are populated"), async () => {
     for (const [id, min] of [["#sIndustry", 8], ["#sGeo", 3], ["#sCap", 8], ["#sDays", 4], ["#sStatus", 4]]) expect((await page.locator(`${id} option`).count()) >= min, `${id} has too few options`);
@@ -152,10 +180,14 @@ async function suite(mode, url) {
   const titles = async () => (await page.locator("#sResults tbody .title").allTextContents()).join(" | ");
 
   if (isStatic) {
-    await check(P("Run RFP Sweep shows results and a result toast"), async () => { await run(); expect((await count()) >= 2, "no results"); expect(/Searched \d+ opportunities/.test(await toastText(page)), "no result toast"); });
+    await check(P("Run RFP Sweep shows results and a result toast"), async () => { await run(); expect((await count()) >= 2, "no results"); await seenToast(page, /Searched \d+ opportunities/); });
   } else {
     await check(P("results render (local search runs live, so this checks the loaded pipeline)"), async () => { await page.selectOption("#sStatus", "active"); await page.selectOption("#sDays", "any"); await page.dispatchEvent("#sStatus", "change"); await page.waitForTimeout(300); expect((await count()) >= 2, "no results"); });
   }
+  await check(P("results table: Fit, Opportunity, Customer, Industry, Deadline, Owner, Status (no Value column)"), async () => {
+    const heads = (await page.locator("#sResults thead th").allTextContents()).map((x) => x.trim()).filter(Boolean);
+    expect(!heads.includes("Value") && heads.join("|") === "Fit|Opportunity|Customer|Industry|Deadline|Owner|Status", `headers: ${heads.join("|")}`);
+  });
   const statusCheck = async (v, include, exclude) => {
     await page.selectOption("#sStatus", v); await page.dispatchEvent("#sStatus", "change"); await page.waitForTimeout(250);
     const t = await titles();
@@ -194,19 +226,68 @@ async function suite(mode, url) {
   await check(P("workflow steps work from the keyboard"), async () => { await page.focus('#flowSteps li[data-step="qualify"]'); await page.keyboard.press("Enter"); await page.waitForTimeout(150); expect(await page.locator(".flow-note").isVisible(), "Enter did nothing"); await page.click(".flow-note button"); });
 
   // ---- workspace
-  const openFirst = async () => { await page.locator("#sResults tbody tr", { hasText: "Enterprise Resource Planning" }).locator("button", { hasText: "Open" }).click(); await page.waitForSelector("#sWorkspace.ws-overlay .workspace"); };
+  const openFirst = async () => { await page.locator("#sResults tbody tr", { hasText: "Enterprise Resource Planning (ERP)" }).locator("button", { hasText: "Open" }).click(); await page.waitForSelector("#sWorkspace.ws-overlay .workspace"); };
   await check(P("Open shows the workspace as an overlay"), async () => { await openFirst(); expect(await page.locator("#sWorkspace.ws-overlay").isVisible(), "overlay hidden"); });
-  await check(P("all six workspace tabs render"), async () => {
-    for (const t of ["Overview", "Requirements", "Responses", "Risks", "Team", "Proposal"]) {
+  await check(P("all eight workspace tabs render"), async () => {
+    for (const t of ["Overview", "Requirements", "Risks", "Team", "Responses", "Proofread", "Proposal", "Submission status"]) {
       await page.locator("#sWorkspace .ws-tabs button", { hasText: t }).click(); await page.waitForTimeout(120);
       expect((await page.locator("#sWorkspace .ws-body").textContent()).trim().length > 20, `${t} tab empty`);
     }
+  });
+  await check(P("Team tab: exactly the four roles"), async () => {
+    await page.locator("#sWorkspace .ws-tabs button", { hasText: "Team" }).click();
+    const roles = (await page.locator("#sWorkspace .team-table tbody th").allTextContents()).map((x) => x.trim());
+    expect(roles.join("|") === "RFP Manager|Pre-sales Consultant|Account Executive|SME Contributor", `roles: ${roles.join("|")}`);
+    expect(await page.locator("#sWorkspace button", { hasText: "Assign opportunity to RFP Manager" }).count() === 1, "no assign button");
   });
   await check(P("Overview shows the five qualify answers and verified vs inferred"), async () => {
     await page.locator("#sWorkspace .ws-tabs button", { hasText: "Overview" }).click();
     const t = await page.locator("#sWorkspace .ws-body").textContent();
     for (const k of ["Why this opportunity matters", "Why we may not qualify", "Information still required", "Recommended next action", "Verified, from the source", "Inferred by this tool", "Evaluator summary"]) expect(t.includes(k), `missing ${k}`);
     expect(await page.locator("#sWorkspace .md li").count() > 3, "summary not rendered as a list");
+  });
+  await check(P("Pursue / No-bid: visible confirmation, the button shows the decision, a second click undoes it"), async () => {
+    const decide = (label) => page.locator("#sWorkspace .decision-row button", { hasText: label });
+    const statusTag = () => page.locator("#sWorkspace .ws-head .status-tag").textContent();
+    await decide("Pursue").click();
+    await seenToast(page, isStatic ? /Marked Pursuing\. Saved in this browser only/ : /Marked Pursuing/);
+    expect((await decide("Pursue").textContent()).startsWith("✓") && (await decide("Pursue").getAttribute("aria-pressed")) === "true", "Pursue does not show as chosen");
+    expect((await statusTag()) === "Pursuing", "status in the header not updated");
+    await decide("Pursue").click();
+    await seenToast(page, /Decision cleared/);
+    expect(!(await decide("Pursue").textContent()).startsWith("✓") && (await statusTag()) === "Qualifying", "second click did not undo");
+    await decide("No-bid").click();
+    await seenToast(page, /Marked No-bid.*Closed filter/);
+    expect((await decide("No-bid").textContent()).startsWith("✓"), "No-bid does not show as chosen");
+    await decide("No-bid").click(); await page.waitForTimeout(200);
+    expect((await statusTag()) === "Qualifying", "No-bid not undone");
+  });
+  if (isStatic) {
+    await check(P("a decision on the published site is kept in this browser across a reload"), async () => {
+      await page.locator("#sWorkspace .decision-row button", { hasText: "Pursue" }).click(); await page.waitForTimeout(200);
+      await page.reload(); await page.waitForSelector("#sRun"); await page.waitForTimeout(700);
+      await run();
+      const row = page.locator("#sResults tbody tr", { hasText: "Enterprise Resource Planning" });
+      expect((await row.textContent()).includes("Pursuing"), "decision lost on reload");
+      await openFirst();
+      expect(/saved in this browser/.test(await page.locator("#sWorkspace .decision-row").textContent()), "no 'saved in this browser' note");
+      await page.locator("#sWorkspace .decision-row button", { hasText: "Pursue" }).click(); await page.waitForTimeout(200); // undo
+    });
+  }
+  await check(P("an RFP read by the sweep: its facts and documents show, and they are not 'information still required'"), async () => {
+    await page.keyboard.press("Escape");
+    await page.locator("#sResults tbody tr", { hasText: "HRIS" }).locator("button", { hasText: "Open" }).click();
+    await page.waitForSelector("#sWorkspace.ws-overlay .workspace");
+    await page.locator("#sWorkspace .ws-tabs button", { hasText: "Overview" }).click();
+    const body = await page.locator("#sWorkspace .ws-body").textContent();
+    for (const k of ["Questions deadline", "Contract term", "Stated value", "Evaluation criteria", "Basis of award", "Read with the RFP", "HRIS-RFP-2026-9.pdf", "22 pages"]) expect(body.includes(k), `missing "${k}"`);
+    const still = await page.locator("#sWorkspace .ws-body h3", { hasText: "Information still required" }).locator("xpath=following-sibling::ul[1]").textContent();
+    expect(!/Deadline for questions|Budget or estimated value|Contract term|Evaluation criteria/.test(still), `still asks for: ${still.slice(0, 160)}`);
+    expect(/RFP document read by the sweep/.test(body), "facts do not say they came from the document");
+    await page.locator("#sWorkspace .ws-tabs button", { hasText: "Requirements" }).click();
+    expect((await page.locator("#sWorkspace .ws-body").textContent()).includes("payroll parallel testing"), "requirements from the document missing");
+    await page.keyboard.press("Escape");
+    await openFirst();
   });
   await check(P("score tiles explain Overall, Fit and Timeline"), async () => {
     for (const k of ["Overall", "Fit", "Timeline"]) {
@@ -226,9 +307,32 @@ async function suite(mode, url) {
     await page.locator("#sWorkspace .stepper button", { hasText: "Draft response" }).click(); await page.waitForTimeout(250);
     expect((await page.locator("#sWorkspace .responses tbody tr").count()) >= 3, "no drafted responses");
   });
-  await check(P("stepper: Red-team gives a readiness verdict"), async () => {
-    await page.locator("#sWorkspace .stepper button", { hasText: "Red-team" }).click(); await page.waitForTimeout(250);
-    expect(/RFP readiness: (Ready|Needs review)/.test(await page.locator("#sWorkspace .readiness").textContent()), "no readiness");
+  await check(P("stepper: the six steps, with Proofread before RFP submission status"), async () => {
+    const steps = (await page.locator("#sWorkspace .stepper li").allTextContents()).map((x) => x.replace(/^[✓\d]+/, "").trim());
+    expect(steps.join("|") === "Qualify|Assign|Analyze RFP|Draft response|Proofread|RFP submission status", `steps: ${steps.join("|")}`);
+    expect(!(await page.locator("#sWorkspace").textContent()).includes("Red-team"), "Red-team still shown");
+  });
+  await check(P("stepper: Proofread flags what to fix and holds sign-off until the high issues are fixed"), async () => {
+    await page.locator("#sWorkspace .stepper button", { hasText: "Proofread" }).click();
+    await seenToast(page, /Proofread: (Fix before submission|Needs a pass|Clean)/);
+    expect((await page.locator("#sWorkspace .ws-tabs button.active").textContent()) === "Proofread", "not on the Proofread tab");
+    const t = await page.locator("#sWorkspace .proofread").textContent();
+    expect(/placeholder/.test(t) && /\[SME validation required\]/.test(t), "placeholders left in the drafts are not flagged");
+    expect(await page.locator("#sWorkspace .proofread button", { hasText: "Sign off proofreading" }).isDisabled(), "sign-off allowed with high issues");
+    await page.locator("#sWorkspace .proofread button", { hasText: "Re-check" }).click();
+    await seenToast(page, /Proofread again/);
+  });
+  await check(P("stepper: RFP submission status says what blocks it, and Mark as submitted / Undo work visibly"), async () => {
+    await page.locator("#sWorkspace .stepper button", { hasText: "RFP submission status" }).click();
+    await seenToast(page, /RFP submission status: not ready, \d+ blocking/);
+    expect((await page.locator("#sWorkspace .ws-tabs button.active").textContent()) === "Submission status", "not on the Submission status tab");
+    const t = await page.locator("#sWorkspace .submission").textContent();
+    expect(/Not ready: \d+ blocking issue/.test(t) && /Proofreading is not signed off|Not proofread yet/.test(t), "blocking reasons missing");
+    await page.locator("#sWorkspace .submission button", { hasText: "Mark as submitted" }).click();
+    await seenToast(page, /Marked Submitted/);
+    expect(/Submitted/.test(await page.locator("#sWorkspace .submission .readiness").textContent()) && (await page.locator("#sWorkspace .ws-head .status-tag").textContent()) === "Submitted", "not shown as submitted");
+    await page.locator("#sWorkspace .submission button", { hasText: "Undo submitted" }).click();
+    await seenToast(page, /Submission undone/);
   });
   await check(P("stepper: Qualify, Assign and Analyze RFP respond"), async () => {
     await page.locator("#sWorkspace .stepper button", { hasText: "Assign" }).click(); await page.waitForTimeout(150);
@@ -251,7 +355,7 @@ async function suite(mode, url) {
     const ws = wb.getWorksheet("SME Review"); ws.getCell(2, 6).value = "Looks good"; ws.getCell(2, 7).value = "Approved";
     const edited = path.join(DL, "sme-edited.xlsx"); await wb.xlsx.writeFile(edited);
     await page.setInputFiles('#sWorkspace .sme-row input[type="file"]', edited); await page.waitForTimeout(800);
-    expect(/answer\(s\) updated from the SME review/.test(await toastText(page)), "no import toast");
+    await seenToast(page, /answer\(s\) updated from the SME review/);
     expect((await page.locator("#sWorkspace .responses").textContent()).includes("SME: Looks good"), "note not shown");
   });
   await check(P("response draft and status are editable"), async () => {
@@ -332,11 +436,6 @@ async function suite(mode, url) {
     await page.selectOption("#aAssignee", "__none"); await page.check("#aShowDone"); await page.waitForTimeout(150);
     await page.selectOption("#aAssignee", ""); await page.uncheck("#aShowDone");
   });
-  await check(P("Coverage & runs shows gaps and runs"), async () => {
-    await tab(page, "coverage"); await page.waitForTimeout(200);
-    expect((await page.locator("#gaps tbody").textContent()).includes("blocked-by-portal"), "gap missing");
-    expect((await page.locator("#runs tbody tr").count()) >= 1, "runs missing");
-  });
 
   // ---- editing (local dashboard only)
   if (!isStatic) {
@@ -344,20 +443,20 @@ async function suite(mode, url) {
     await check(P("edit: assign, status, notes, add action, go/no-go, done"), async () => {
       await page.reload(); await page.waitForSelector("#sRun"); await tab(page, "findings"); await page.waitForTimeout(400);
       const row = page.locator("#findings tbody tr", { hasText: "HRIS" }).first();
-      const assignee = row.locator("input.assignee"); await assignee.fill("Bid Writer"); await assignee.press("Enter"); await page.waitForTimeout(500);
-      expect(/Assigned to Bid Writer/.test(await toastText(page)), "assign");
+      const assignee = row.locator("input.assignee"); await assignee.fill("Pre-sales Consultant"); await assignee.press("Enter"); await page.waitForTimeout(500);
+      await seenToast(page, /Assigned to Pre-sales Consultant/);
       await page.locator("#findings tbody tr", { hasText: "HRIS" }).first().locator("select").selectOption("Qualifying"); await page.waitForTimeout(500);
-      expect(/Status → Qualifying/.test(await toastText(page)), "status");
+      await seenToast(page, /Status → Qualifying/);
       await page.locator("#findings tbody tr", { hasText: "HRIS" }).first().locator("button", { hasText: "Open" }).click(); await page.waitForTimeout(300);
       const notes = page.locator("#findings tr.detail textarea").first(); await notes.fill("Call the buyer"); await notes.dispatchEvent("change"); await page.waitForTimeout(500);
-      expect(/Notes saved/.test(await toastText(page)), "notes");
+      await seenToast(page, /Notes saved/);
       await page.fill('#findings tr.detail input[placeholder="New action item"]', "Confirm the Q&A deadline");
       await page.locator("#findings tr.detail button", { hasText: "Add" }).click(); await page.waitForTimeout(500);
-      expect(/Action added/.test(await toastText(page)), "add action");
+      await seenToast(page, /Action added/);
       await page.locator("#findings tr.detail .gng-table select").first().selectOption("yes"); await page.waitForTimeout(500);
       await page.locator("#findings tr.detail .actions-list input[type=checkbox]").first().check(); await page.waitForTimeout(500);
       const saved = JSON.parse(fs.readFileSync(path.join(STORE, "all.json"), "utf8")).findings.find((f) => /HRIS/.test(f.title));
-      expect(saved.assignee === "Bid Writer" && saved.status === "Qualifying" && saved.notes === "Call the buyer" && saved.goNoGo.fit === "yes" && saved.actions.some((a) => a.title === "Confirm the Q&A deadline") && saved.actions.some((a) => a.done), "not persisted to the ledger");
+      expect(saved.assignee === "Pre-sales Consultant" && saved.status === "Qualifying" && saved.notes === "Call the buyer" && saved.goNoGo.fit === "yes" && saved.actions.some((a) => a.title === "Confirm the Q&A deadline") && saved.actions.some((a) => a.done), "not persisted to the ledger");
       expect((saved.history ?? []).length >= 3, "audit trail missing");
     });
     await check(P("edit: Excel import applies sheet changes"), async () => {
@@ -369,7 +468,7 @@ async function suite(mode, url) {
       ws.getCell(r, hdr["Assignee"]).value = "RFP Manager";
       const f2 = path.join(DL, "edited.xlsx"); await wb.xlsx.writeFile(f2);
       await page.setInputFiles("#importXlsx", f2); await page.waitForTimeout(800);
-      expect(/change\(s\)/.test(await toastText(page)), "no import toast");
+      await seenToast(page, /change\(s\)/);
       const saved = JSON.parse(fs.readFileSync(path.join(STORE, "all.json"), "utf8")).findings.find((f) => /past due/.test(f.title));
       expect(saved.assignee === "RFP Manager", "import not applied");
     });
@@ -380,7 +479,7 @@ async function suite(mode, url) {
       await page.locator("#sWorkspace .stepper button", { hasText: "Draft response" }).click(); await page.waitForTimeout(900);
       await page.locator("#sWorkspace .ws-tabs button", { hasText: "Overview" }).click();
       await page.locator("#sWorkspace button", { hasText: "Pursue" }).click(); await page.waitForTimeout(600);
-      expect(/Marked Pursuing/.test(await toastText(page)), "pursue");
+      await seenToast(page, /Marked Pursuing/);
       await page.reload(); await page.waitForSelector("#sRun"); await page.waitForTimeout(700);
       await page.selectOption("#sStatus", "active"); await page.dispatchEvent("#sStatus", "change"); await page.waitForTimeout(200);
       await openFirst(); await page.locator("#sWorkspace .ws-tabs button", { hasText: "Responses" }).click();
@@ -392,13 +491,13 @@ async function suite(mode, url) {
     await check(P("edit: Assign opportunity from the Team tab"), async () => {
       await openFirst(); await page.locator("#sWorkspace .ws-tabs button", { hasText: "Team" }).click();
       await page.locator("#sWorkspace button", { hasText: "Assign opportunity to" }).click(); await page.waitForTimeout(600);
-      expect(/Assigned to/.test(await toastText(page)), "assign from team");
+      await seenToast(page, /Assigned to/);
       await page.keyboard.press("Escape");
     });
     await check(P("edit: Add to pipeline from Analyze a document"), async () => {
       await tab(page, "analyze"); await page.fill("#aRfpText", RFP); await page.click("#aRun"); await page.waitForSelector("#aWorkspace .workspace");
       await page.locator("#aWorkspace button", { hasText: "Add to pipeline" }).click(); await page.waitForTimeout(700);
-      expect(/Added to the pipeline/.test(await toastText(page)), "add to pipeline");
+      await seenToast(page, /Added to the pipeline/);
     });
     await check(P("security: writes without the dashboard header are refused"), async () => {
       const r = await page.evaluate(async () => (await fetch("/api/findings/x?tenant=all", { method: "PATCH", body: "{}" })).status);
@@ -406,8 +505,74 @@ async function suite(mode, url) {
     });
   }
 
+  // ---- your company: understand the business, then score every RFP on what it sells
+  const PROFILE_TEXT = `Harborline Systems
+Fund accounting, payroll and HR software
+Harborline Systems provides ERP financial management, fund accounting, budgeting, payroll and human resources software for school boards, school districts and nonprofit organizations across Canada.
+Payroll and HR
+Payroll software with position control and collective agreement rules, HRIS and employee self service.
+Built on Microsoft Dynamics 365 Business Central with Power BI reporting.`;
+  await check(P("company: a website the page cannot read falls back to paste / upload, visibly"), async () => {
+    await tab(page, "sweep"); await page.waitForTimeout(150);
+    await page.fill("#pUrl", isStatic ? "www.harborline.example" : "http://127.0.0.1:4190/");
+    await page.click("#pBuild"); await page.waitForTimeout(isStatic ? 300 : 1500);
+    if (!isStatic) await seenToast(page, /Blocked|private|paste/i);
+    expect(await page.locator("#companyCard details.company-alt[open]").count() === 1, "paste / upload panel not opened");
+    const note = await page.locator("#companyCard .company-alt .notice").textContent();
+    expect(isStatic ? /can only talk to its own site/.test(note) : /could not be read/.test(note), `note: ${note}`);
+    if (isStatic) expect(await page.locator('#companyCard .company-alt .notice a[href="https://www.harborline.example"]').count() === 1, "no link to open the website");
+  });
+  await check(P("company: profile built from pasted text shows what it sells, as toggle chips"), async () => {
+    await page.fill("#pText", PROFILE_TEXT);
+    await page.click("#pBuildText"); await page.waitForTimeout(600);
+    await seenToast(page, /Profile built/);
+    const card = await page.locator("#companyCard").textContent();
+    expect(/Scoring for\s*Harborline Systems/.test(card), "profile name not shown");
+    for (const k of ["ERP / Finance", "HR / HCM", "Business Central", "Who you serve"]) expect(card.includes(k), `profile missing ${k}`);
+    if (!isStatic) expect(JSON.parse(fs.readFileSync(path.join(STORE, "profile.json"), "utf8")).name === "Harborline Systems", "profile not saved on the server");
+  });
+  await check(P("company: results are scored on the offering and filtered to what is relevant"), async () => {
+    await page.click("#companyCard button:has-text('Done')").catch(() => {});
+    await page.selectOption("#sStatus", "all"); await page.dispatchEvent("#sStatus", "change"); await page.waitForTimeout(300);
+    expect(/relevant to Harborline Systems/.test(await page.locator(".results-head h2").textContent()), "heading does not say relevant to the company");
+    expect(/Harborline/.test(await page.locator("#sResults thead th", { hasText: "Fit" }).getAttribute("title")), "Fit column is not the offering fit");
+    const relevant = await count();
+    await page.uncheck("#pRelevant"); await page.waitForTimeout(250);
+    const all = await count();
+    await page.check("#pRelevant"); await page.waitForTimeout(250);
+    expect(all >= relevant && relevant >= 1, `relevant ${relevant}, all ${all}`);
+    await page.selectOption("#sStatus", "active"); await page.dispatchEvent("#sStatus", "change"); await page.waitForTimeout(200);
+  });
+  await check(P("company: the workspace Fit is on your offering, with no industry in it"), async () => {
+    await openFirst();
+    const tile = page.locator("#sWorkspace .kpi-btn", { hasText: "Fit to Harborline" });
+    expect(await tile.count() === 1, "no 'Fit to Harborline' tile");
+    await tile.click(); await page.waitForTimeout(150);
+    const ex = await page.locator("#sWorkspace .explain").textContent();
+    expect(/From your website/.test(ex) && /What you sell/.test(ex) && /ERP \/ Finance/.test(ex), "explanation is not about the offering");
+    expect(!/industry/i.test(ex), "the fit explanation mentions industry");
+    await page.keyboard.press("Escape");
+  });
+  await check(P("company: a capability chip switches off and stays off"), async () => {
+    const chip = page.locator("#companyCard .chip", { hasText: "HR / HCM" }).first();
+    await chip.click(); await page.waitForTimeout(300);
+    expect(/off/.test(await page.locator("#companyCard .chip", { hasText: "HR / HCM" }).first().getAttribute("class")), "chip did not switch off");
+    await page.reload(); await page.waitForSelector("#sRun"); await page.waitForTimeout(800);
+    expect(/off/.test(await page.locator("#companyCard .chip", { hasText: "HR / HCM" }).first().getAttribute("class")), "chip state not kept");
+  });
+  await check(P("company: edit terms and save, then remove the profile"), async () => {
+    await page.locator("#companyCard button", { hasText: "Edit profile" }).click();
+    await page.fill("#companyCard .kw-input", "fund accounting, position control, grant management");
+    await page.locator("#companyCard button", { hasText: "Save profile" }).click();
+    await seenToast(page, /Profile saved/);
+    expect((await page.locator("#companyCard").textContent()).includes("grant management"), "terms not saved");
+    await page.locator("#companyCard button", { hasText: "Remove" }).click(); await page.waitForTimeout(400);
+    expect(await page.locator("#pUrl").count() === 1, "profile not removed");
+    expect(/opportunit(y|ies) found/.test(await page.locator(".results-head h2").textContent()), "results still filtered after removing the profile");
+  });
+
   await check(P("no stray \"null\" or \"undefined\" text on any screen"), async () => {
-    for (const t of ["sweep", "analyze", "findings", "actions", "coverage"]) {
+    for (const t of ["sweep", "analyze", "findings", "actions"]) {
       await tab(page, t); await page.waitForTimeout(150);
       const text = await page.locator(`#tab-${t}`).innerText();
       expect(!/(^|\s)(null|undefined|NaN|\[object Object\])(\s|$)/.test(text), `${t} screen shows a stray value`);

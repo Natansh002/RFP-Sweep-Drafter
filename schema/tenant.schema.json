@@ -224,7 +224,7 @@
     },
     "team": {
       "type": "array",
-      "description": "Role titles for the Assignee dropdown (e.g. \"RFP Manager\", \"Bid Writer\"). Never people's names or emails.",
+      "description": "Role titles for the Assignee dropdown: RFP Manager, Pre-sales Consultant, Account Executive, SME Contributor. Never people's names or emails.",
       "items": {
         "type": "string",
         "minLength": 1

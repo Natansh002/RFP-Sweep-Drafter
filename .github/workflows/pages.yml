@@ -73,6 +73,8 @@ jobs:
         env:
           SITE_URL: ${{ steps.pages.outputs.base_url }}
           SWEEP_WIDTH: ${{ github.event.inputs.width || '2' }}
+          # Solicitation documents read per industry run (recent readings are reused).
+          RFP_DOCUMENTS_PER_RUN: "20"
           FRESH: ${{ github.event.inputs.fresh == 'true' && '1' || '0' }}
         run: |
           if [ "${{ github.event.inputs.sweep }}" = "false" ]; then

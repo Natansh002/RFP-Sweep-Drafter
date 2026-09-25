@@ -36,9 +36,10 @@
     }
   },
   "team": [
-    "Capture Lead",
-    "Sales Exec",
-    "Bid Writer"
+    "RFP Manager",
+    "Pre-sales Consultant",
+    "Account Executive",
+    "SME Contributor"
   ],
   "owners": {
     "default": "Capture Lead"

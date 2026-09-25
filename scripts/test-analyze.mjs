@@ -104,8 +104,10 @@ const narrowed = packForSearch(k12, ["migration"]);
 a("capabilities: search adds capability terms to the pack", narrowed.qualifiers.titleKeywords.includes("data migration") && narrowed.searchTerms.length > 0);
 a("capabilities: any-industry search is the capability alone", !packForSearch(loadPack("any"), ["tms"]).qualifiers.titleKeywords.includes("ERP"));
 const team = recommendTeam(matchCapabilities("HRIS and payroll implementation"));
-a("route: team is roles only", Object.values(team).flat().every((v) => typeof v !== "string" || !/@/.test(v)) && /Practice/.test(team.solutionLead));
-a("route: requirement owner by category", ownerForCategory("security") === "Security SME" && ownerForCategory("pricing") === "Commercial Lead");
+a("route: the four roles, roles only", team.rfpManager === "RFP Manager" && team.presales === "Pre-sales Consultant" && team.accountExecutive === "Account Executive" && team.sme === "SME Contributor" && Object.values(team).flat().every((v) => typeof v !== "string" || !/@/.test(v)));
+a("route: SME areas from the capabilities asked for", team.smeAreas.includes("HR / HCM implementation") && team.smeAreas.includes("Payroll implementation"));
+a("route: requirement owner by category, one of the four roles", ownerForCategory("security") === "Pre-sales Consultant" && ownerForCategory("pricing") === "Account Executive" && ownerForCategory("format") === "RFP Manager" && ownerForCategory("functional") === "SME Contributor");
+a("route: every owner in the shipped matrix is one of the four roles", (() => { const m = JSON.parse(fs.readFileSync("config/capability-matrix.json", "utf8")); return [...Object.values(m.roles), ...Object.values(m.byCategory)].every((r) => ["RFP Manager", "Pre-sales Consultant", "Account Executive", "SME Contributor"].includes(r)); })());
 a("general mode exists without any company", tenantIds()[0] === "all" && loadTenant("all").industries.includes("k12"));
 
 const csv = 'a,b\n"x, y","line1\nline2"\n"he said ""hi""",2\n';
@@ -151,8 +153,14 @@ a("red-team: ready once everything is final", rt2.readiness === "Ready" && rt2.b
 a("red-team: generic phrasing warned", redTeam(an, approved, "Our world-class, best-in-class seamless platform", { now: NOW }).warnings.some((w) => /Generic phrasing/.test(w)));
 
 // ------------------------------------------------------------------ export and bundle
-const wb = await buildAnalysisWorkbook(ExcelJS, an, { answers: ans, redTeam: rt, team, proposal: prop });
-a("export: scoring workbook has every sheet", ["Summary", "Scores", "Requirements", "Compliance", "Key data", "Risks", "Responses", "Team", "Readiness", "Proposal draft"].every((n) => wb.getWorksheet(n)));
+const { proofread } = await import("../lib/proofread.mjs");
+const pr = proofread(ans, prop);
+const wb = await buildAnalysisWorkbook(ExcelJS, an, { answers: ans, proofread: pr, redTeam: rt, team, proposal: prop });
+a("export: scoring workbook has every sheet", ["Summary", "Scores", "Requirements", "Compliance", "Key data", "Risks", "Responses", "Team", "Proofread", "Submission status", "Proposal draft"].every((n) => wb.getWorksheet(n)));
+a("proofread: drafted answers with SME markers need fixing before submission", pr.verdict === "Fix before submission" && pr.issues.some((i) => i.kind === "placeholder"));
+a("proofread: clean text passes", proofread([{ reqId: "1", level: "mandatory", draft: "Our implementation team configures position control and collective agreement rules in the first phase, then migrates three years of payroll history and reconciles it with finance before go-live." }], "").verdict === "Clean");
+a("proofread: misspelling, doubled word and undefined acronym flagged", (() => { const r = proofread([{ reqId: "2", level: "desirable", draft: "We recieve the the files through the ETL pipeline." }], ""); return ["spelling", "doubled word", "acronym"].every((k) => r.issues.some((i) => i.kind === k)); })());
+a("proofread: an all-caps name is not an acronym", !proofread([{ reqId: "3", level: "desirable", draft: "HARBORLINE SYSTEMS supports payroll for the district." }], "").issues.some((i) => i.kind === "acronym"));
 const buf = Buffer.from(await wb.xlsx.writeBuffer());
 a("export: valid xlsx", buf.subarray(0, 2).toString() === "PK" && buf.length > 5000);
 const ctx = { window: {}, console };
@@ -243,6 +251,22 @@ a("sector: CanadaBuys federal department", sec("Shared Services Canada (SSC)", "
 a("sector: always labelled inferred with its basis", classifySector({ buyer: "City of Coquitlam" }).inferred === true && /City of/.test(classifySector({ buyer: "City of Coquitlam" }).basis));
 a("sector: a Canadian 'Department of' stays Canadian", sec("Department of Natural Resources (NRCan)", "ca.federal.canadabuys.open") === "federal-ca");
 a("sector: no buyer, no guess", classifySector({}) === null);
+
+// ---- fit is about the product offering, never the industry
+{
+  const plain = analyzeRfp({ text: RFP, packs, now: NOW });
+  a("fit: no industry in the fit reason", !plain.scores.reasons.some((r) => /^Fit/.test(r) && /industry is/i.test(r)) && !/closest industry/.test(plain.summary));
+  a("fit: without a profile it asks for the company website", plain.scores.fitBasis === "capability terms" && plain.scores.reasons.some((r) => /^Fit/.test(r) && /website/.test(r)));
+  a("fit: qualify shows no closest industry", !qualify(plain).inferred.some((x) => /industry/i.test(x.label) && x.label !== "Buyer's industry"));
+  const profile = { name: "Example Co", capabilities: [{ id: "erp", label: "ERP / Finance implementation", on: true }, { id: "payroll", label: "Payroll implementation", on: true }], keywords: ["fund accounting", "position control"], platforms: [], products: [], industries: [] };
+  const withP = analyzeRfp({ text: RFP, packs, now: NOW, profile, buyer: "Example School Board" });
+  a("fit: with a profile, fit is the offering fit", withP.scores.fitBasis === "offering" && withP.scores.fit === withP.scores.company.score && withP.scores.company.matched.capabilities.includes("erp"));
+  a("fit: offering reasons, no industry", withP.scores.reasons.some((r) => /^Fit \d+: Asks for what you offer/.test(r)) && !withP.scores.reasons.some((r) => /^Fit/.test(r) && /industry/i.test(r)));
+  a("fit: overall uses the offering fit", withP.scores.overall === Math.round((withP.scores.fit * 45 + withP.scores.risk * 35 + withP.scores.timeline * 20) / 100));
+  const other = analyzeRfp({ text: RFP, packs, now: NOW, profile: { ...profile, capabilities: [{ id: "gis", label: "GIS / asset management", on: true }], keywords: ["asset registry"] } });
+  a("fit: a company that sells something else scores low on the same RFP", other.scores.fit < withP.scores.fit && other.scores.fit <= 35);
+  a("fit: qualify says the fit is from the website", qualify(withP).inferred.some((x) => x.label === "Fit score" && /website/.test(x.how)));
+}
 
 console.log(fails ? `\n${fails} FAILED, ${passes} passed` : `\nall ${passes} analysis assertions passed`);
 process.exit(fails ? 1 : 0);

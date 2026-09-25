@@ -1,14 +1,15 @@
 # RFP Sweep & Drafter
 
 An RFP operating system for professional services: **Find → Understand → Qualify →
-Assign → Answer → Review → Respond**. Nobody configures a company first. You
-say what you are looking for:
+Assign → Answer → Proofread → Submit**. Give it your company's website and it works out
+what you sell, then scores every RFP on that offering. Then say what you are looking for:
 
 > **Industry → Geography → Capability → Date range** → **Run RFP Sweep**
 
-and get a scored pipeline ("24 opportunities found: 8 High fit, 10 Review"). Open
-any opportunity and work it through **Qualify → Assign → Analyze RFP → Draft
-response → Red-team**, then **export the scoring file** (Excel) and the
+and get a scored pipeline ("24 opportunities relevant to you: 8 Strong fit, 10 Possible fit").
+Each RFP comes in with its public solicitation documents already read. Open any
+opportunity and work it through **Qualify → Assign → Analyze RFP → Draft response →
+Proofread → RFP submission status**, then **export the scoring file** (Excel) and the
 proposal draft.
 
 Live: **https://natansh002.github.io/RFP-Sweep-Drafter/** (read-only, refreshed by
@@ -16,18 +17,34 @@ GitHub Actions). Full editing: `npm run dashboard` on your machine.
 
 | Step | What it does | Agent in the spec |
 |---|---|---|
-| Discover | Sweeps CanadaBuys open data, SAM.gov and public portals; de-duplicates; filters by industry, geography, capability, date | Scout |
-| Understand | Reads the notice or the uploaded RFP (PDF / DOCX / TXT / HTML, in the browser). Extracts dates, term, value, evaluation weights, submission rules and requirements | Lens, Decomposer |
-| Qualify | Fit / risk / timeline / coverage scores with reasons. *Why it matters, why we may not qualify, key risks, information still required, next action.* **Verified** facts (with source) kept apart from **inferred** ones | FitCheck |
-| Assign | Recommends opportunity owner, solution lead, technical lead, commercial owner, SMEs and sponsor from `config/capability-matrix.json` (roles only). Override any of them | Route |
+| Your company | Reads your website (home page plus its product, solution and about pages) and works out what you sell (capabilities), your own terms and product names, and the platforms you work with. You review it as toggle chips and edit the terms | Profile |
+| Discover | Sweeps CanadaBuys open data, SAM.gov and public portals; de-duplicates; filters by industry, geography, capability, date; **scores every posting on your offering** and can show only the relevant ones | Scout |
+| Fetch the RFP | Downloads each posting's **public solicitation documents** (SAM.gov attachments, the CanadaBuys attachment list, document links on the posting page) and reads them for the **questions deadline, budget, contract term and options, evaluation criteria and basis of award**, risks and response items. Never signs in | Lens |
+| Understand | Reads the notice, the fetched documents or an uploaded RFP (PDF / DOCX / TXT / HTML). Extracts dates, term, value, evaluation weights, submission rules and requirements | Lens, Decomposer |
+| Qualify | Fit / risk / timeline / coverage scores with reasons. **Fit is on your product offering** (what you sell 55, your terms and product names 30, platforms 15), never the buyer's industry. *Why it matters, why we may not qualify, key risks, information still required (and where the sweep looked), next action.* **Verified** facts (with source) kept apart from **inferred** ones | FitCheck |
+| Assign | Four roles on every bid: **RFP Manager, Pre-sales Consultant, Account Executive, SME Contributor**, with the SME areas the RFP needs, from `config/capability-matrix.json` (roles only) | Route |
 | Answer | Drafts each requirement from the approved knowledge base (`library/knowledge.json`), citing the source with a confidence level. **No approved source means "SME validation required", never invented text** | AnswerSmith, ProofPoint |
 | Build | First-draft proposal in the customer's own section names: executive summary (problem → approach → outcomes → why us), responses, compliance matrix, assumptions, risks. Pricing is never drafted | ProposalBuilder |
-| Review | Red-team check: unanswered or unapproved mandatory items, SME markers, stale sources, page limits, generic phrasing, repetition. **Ready / Needs review** with blocking issues | RedTeam |
+| Proofread | Every answer and the proposal: placeholders left in, misspellings, doubled words, mixed spellings, undefined acronyms, long sentences, spacing, thin answers, generic phrasing. Flags only; a person fixes the text and signs off | Proofreader |
+| RFP submission status | The submission check: signed-off proofreading, mandatory answers approved, no SME markers, stale sources, page limits, deadline. **Ready to submit** or what blocks it, then **Mark as submitted**. Nothing is sent from the tool | RedTeam |
 | Learn | Won / lost / no-bid, loss reason and awardee on each finding, a Pipeline sheet with win rate, audit history and workspace versions | Learn |
 
 **Filters:** Industry (the buyer's sector), Geography, Capability, Date range and
 Status: **Active**, **Past due** (closing date passed while still open on our side),
-**Closed**, All. The workflow steps across the top filter the results when clicked.
+**Closed**, All, plus **Show only RFPs relevant to us** once your company profile is set.
+The workflow steps across the top filter the results when clicked.
+
+**Your company profile:** the local dashboard reads your website itself (through the
+same guard as every sweep). The published page cannot read other websites (its security
+policy only lets it talk to its own site), so there you paste your About / Products text
+or upload a brochure; the profile stays in your browser. Every capability and match names
+the words that produced it.
+
+**Fetched with the RFP:** documents behind a sign-in (MERX, bids&tenders, Bonfire,
+Biddingo, SAP Ariba) are named, not read: the sweeper never logs in. The full document text
+is kept next to your local ledger (`store/text/`, gitignored) so the local workspace
+analyzes the whole RFP; the published site carries only the extracted facts, response
+items and risks. Contact names, emails and phone numbers are removed from anything stored.
 
 **Writing responses:** the `rfp-response-writer` skill (`.claude/skills/`) encodes how
 SME-reviewed answers are written: approach in the buyer's terms, every sub-ask in
@@ -73,7 +90,7 @@ npm run check && npm run sweep -- --tenant acme-health --width 1
 | Drafts | Bid/no-bid brief and first-draft response | Edit drafts in the dashboard |
 | Pipeline | Count and value by status and industry, win rate | — |
 | Coverage gaps / Runs | What could not be read, and the run history | — |
-| Team | The assignee list (role titles, not names) | Add roles |
+| Team | The assignee list: RFP Manager, Pre-sales Consultant, Account Executive, SME Contributor (roles, not names) | — |
 
 Import edits back with `npm run import -- --tenant <id>` or the dashboard's
 **Import Excel** button. If a row was changed in the dashboard after you exported
@@ -117,7 +134,7 @@ BidPrime, HigherGov and others. It covers what was adopted, what was left out on
 - **Relevance is a gate.** A posting that matches no product keyword is dropped, however much "unknown" credit it would collect. Keywords match whole words, so "SIS" does not match "Mississippi".
 - **Closed and out-of-geography bids are vetoed**, whatever they scored.
 - **Unknown is not zero**, and a score built on three or more unknowns is capped at `review`.
-- **What could not be read is reported**, never dropped. `needs-browser`, `fetch-failed` and `blocked` channels appear under Coverage gaps.
+- **What could not be read is reported**, never dropped. `needs-browser`, `fetch-failed` and `blocked` channels are listed on the workbook's Coverage gaps sheet.
 - **Drafts invent nothing.** They use only the tenant's `profile`, its `offerings`, the library and the public posting. Everything else stays `[TODO]`. Pricing is never drafted.
 - **Findings stay local.** `store/` and `output/` are gitignored. The dashboard binds to 127.0.0.1, rejects foreign Host headers, requires a custom header on every write, and serves a strict CSP.
 
