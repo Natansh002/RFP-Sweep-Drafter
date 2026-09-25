@@ -1,8 +1,20 @@
 {
   "$comment": "Direct-sweep watch list. One entry per organisation whose RFPs never reach a procurement portal. This is usually the highest-yield channel in a pack and the one a portal-only sweep misses entirely.",
   "id": "nonprofit-watch",
-  "lastReviewed": "",
-  "entries": [],
+  "lastReviewed": "2026-09-25",
+  "entries": [
+    {
+      "name": "Kentucky Housing Corporation",
+      "domain": "kyhousing.org",
+      "procurementUrl": "https://www.kyhousing.org/page/procurement",
+      "platform": "own website",
+      "browser": true,
+      "country": "United States",
+      "segment": "nonprofit",
+      "source": "state housing finance agency's own procurement page, confirmed live",
+      "verified": "2026-09-25"
+    }
+  ],
   "entryShape": {
     "name": "Organisation name as they write it",
     "domain": "example.org",

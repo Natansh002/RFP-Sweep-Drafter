@@ -83,7 +83,8 @@
   "directSites": {
     "note": "Buyers whose RFPs never reach a portal.",
     "cadence": "weekly",
-    "seedFrom": "data/nonprofit-watch.json"
+    "seedFrom": "data/nonprofit-watch.json",
+    "alwaysSweep": true
   },
   "qualifiers": {
     "titleKeywords": [
@@ -144,7 +145,13 @@
       "advisory services",
       "business analysis",
       "digital transformation",
-      "change management services"
+      "change management services",
+      "cashless",
+      "cashless transaction",
+      "online payments",
+      "payment processing",
+      "fee management",
+      "transaction management solution"
     ],
     "bodyKeywords": [
       "chart of accounts",
@@ -208,7 +215,9 @@
       "fit-gap",
       "roadmap",
       "change management",
-      "training services"
+      "training services",
+      "payment gateway",
+      "cash handling"
     ],
     "must": [
       "solicitation is for software, implementation, integration, migration, support or consulting services"

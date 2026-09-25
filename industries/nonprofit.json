@@ -2,7 +2,7 @@
   "id": "nonprofit",
   "name": "Nonprofit and social services organisations",
   "status": "proven",
-  "statusNote": "Channels carried over from a nonprofit sweep that has run Mon/Wed/Fri against live bids. Company-neutral: product lines, owners and watch lists live in each tenant's offerings.",
+  "statusNote": "Channels carried over from a nonprofit sweep that has run Mon/Wed/Fri against live bids. Company-neutral: product lines, owners and watch lists live in each tenant's offerings. Includes public-benefit buyers that are nonprofit deals: public libraries, housing finance agencies and housing corporations, community foundations.",
   "lastReviewed": "2026-09-24",
   "geography": [
     "CA",
@@ -19,7 +19,19 @@
     "housing authority",
     "assisted living and residential care",
     "arts and culture organisation",
-    "association"
+    "association",
+    "public library",
+    "library board",
+    "library system",
+    "housing finance agency",
+    "housing corporation",
+    "housing agency",
+    "public housing agency",
+    "social housing provider",
+    "public benefit corporation",
+    "political subdivision",
+    "community foundation",
+    "united way"
   ],
   "channels": [
     {
@@ -81,12 +93,18 @@
     "ERP",
     "payroll",
     "grant management",
-    "nonprofit"
+    "nonprofit",
+    "Dynamics GP",
+    "ERP replacement",
+    "library",
+    "housing corporation",
+    "Business Central"
   ],
   "directSites": {
     "note": "Most nonprofit RFPs never reach a procurement portal. They are posted on the organisation's own site, often on a page called Procurement, Opportunities or Work With Us. This is the channel that matters most for this industry and the one a portal-only sweep misses entirely.",
     "cadence": "weekly",
-    "seedFrom": "data/nonprofit-watch.json"
+    "seedFrom": "data/nonprofit-watch.json",
+    "alwaysSweep": true
   },
   "qualifiers": {
     "titleKeywords": [
@@ -104,7 +122,19 @@
       "scheduling software",
       "time and attendance",
       "case management and finance",
-      "back office system"
+      "back office system",
+      "Dynamics GP",
+      "Microsoft Dynamics",
+      "Dynamics 365",
+      "Business Central",
+      "ERP replacement",
+      "ERP system",
+      "ERP solution",
+      "financial system replacement",
+      "accounting system replacement",
+      "finance and HR system",
+      "financial management software",
+      "grants management system"
     ],
     "bodyKeywords": [
       "fund accounting",
@@ -119,7 +149,24 @@
       "union",
       "collective agreement",
       "expense claim",
-      "requisition"
+      "requisition",
+      "end of life",
+      "end-of-life",
+      "end of support",
+      "consolidated reporting",
+      "consolidated financial",
+      "multi-entity",
+      "intercompany",
+      "legal entities",
+      "grant management",
+      "Power BI",
+      "SharePoint",
+      "Power Apps",
+      "Power Automate",
+      "Microsoft 365",
+      "M365",
+      "migrating off",
+      "migration from"
     ],
     "must": [
       "buyer is a nonprofit, charity, or public-benefit body",
@@ -166,5 +213,10 @@
   },
   "sources": [
     "https://bidfit.ca/guides/how-to-find-canadian-government-tenders"
+  ],
+  "neverSkip": [
+    "Public libraries and library boards (e.g. Toronto Public Library)",
+    "State/provincial housing finance agencies and housing corporations (e.g. Kentucky Housing Corporation)",
+    "Any Dynamics GP / legacy ERP end-of-life migration, whatever the buyer type"
   ]
 }

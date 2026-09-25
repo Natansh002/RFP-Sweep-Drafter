@@ -13,6 +13,29 @@ You operate the ionic-rfp-sweeper in this repository for whichever operating com
 - **Public pages only.** WebFetch only public procurement pages and buyers' public websites. Check a URL with `node -e "import('./lib/guard.mjs').then(g=>console.log(g.blockedReason(process.argv[1])))" <url>` if unsure; if it prints a reason, do not open it.
 - **No invented claims.** Drafts may state only what is in the tenant's `profile` and `offerings` or in the public solicitation. Everything else stays a `[TODO]`. Pricing is never drafted.
 
+## Never skip these
+
+These are real deals the sweep once missed. They are encoded in the packs and in
+`scripts/test-analyze.mjs` ("never skip"); keep them there, and treat them as in scope
+whenever you review a sweep by hand.
+
+- **Nonprofit includes public-benefit buyers:** public libraries and library boards
+  (e.g. Toronto Public Library), state/provincial housing finance agencies and housing
+  corporations (e.g. Kentucky Housing Corporation), community foundations, United Way.
+  Their buyer industry is "Nonprofit / public-benefit".
+- **Legacy ERP end-of-life migrations, any buyer:** Dynamics GP, "migrating off",
+  "end of life / end of support", multi-entity or consolidated reporting, a Microsoft
+  stack (M365, Power BI, SharePoint, Power Apps). Qualify these even when the title is vague.
+- **K-12 school payments / cashless / fee management (SchoolDay):** including OECM
+  cooperative RFPs posted on Ontario Tenders and OECM's Euna/Bonfire portal.
+- **Buyers who post only on their own site** go in `data/*-watch.json` with a verified
+  procurement URL (e.g. `https://www.kyhousing.org/page/procurement`); the sweep reads them every run.
+
+If a user says "we are responding to X, did the sweep find it?", check `store/all.json`
+(or the published `data/all.json`) by title and buyer, then work out which of these it was:
+not on a swept source, seen but dropped by the relevance gate, or closed before a sweep
+ran. Fix the cause (source, keyword, buyer type), add a "never skip" test, and say which it was.
+
 ## Workflow
 
 1. `npm run check` — config valid, tests pass.

@@ -172,12 +172,24 @@ a("K-12 pack lists the reviewed sources in order", ["ca.agg.merx", "ca.agg.biddi
 const boards = JSON.parse(fs.readFileSync(new URL("../data/k12-board-sites.json", import.meta.url), "utf8")).entries;
 a("board portal list: every entry verified and public", boards.length >= 25 && boards.every((b) => b.procurementUrl.startsWith("https://") && b.verified && b.segment === "k12"));
 
+// ------------------------------------------------------------------ never skip: RFPs the sweep once missed
+const gen = loadTenant("all");
+const eff = (id) => ({ ...loadPack(id), offering: { productLines: [] } });
+const keep = (p, packId) => { const r = score(p, eff(packId), gen); return r.band !== "dropped" && r.band !== "no bid"; };
+a("never skip: OECM cashless / school payments (SchoolDay)", keep({ title: "PRE-NOTICE FOR AN OECM CASHLESS TRANSACTION MANAGEMENT SOLUTION AND RELATED SERVICES REQUEST FOR PROPOSALS #2026-502", buyer: "OECM", country: "CA", closeDate: "2026-10-23" }, "k12"));
+a("never skip: public library ERP", keep({ title: "Request for Proposal - ERP Solution", buyer: "Toronto Public Library", country: "CA", closeDate: "2026-11-15" }, "nonprofit"));
+a("never skip: housing finance agency leaving Dynamics GP", keep({ title: "RFP for Financial System Replacement", body: "KHC is migrating off Dynamics GP as it approaches end-of-life. Two legal entities require consolidated reporting. Existing Microsoft 365, Power BI, SharePoint.", buyer: "Kentucky Housing Corporation", country: "US", closeDate: "2026-11-30" }, "nonprofit"));
+a("never skip: Dynamics GP migration in the title", keep({ title: "Dynamics GP Migration Services", buyer: "A Foundation", country: "US", closeDate: "2026-12-01" }, "nonprofit"));
+a("sector: library and housing corporation are nonprofit / public-benefit", classifySector({ buyer: "Toronto Public Library" }).id === "nonprofit" && classifySector({ buyer: "Kentucky Housing Corporation" }).id === "nonprofit");
+a("capability: SchoolDay space recognised", matchCapabilities("Cashless Transaction Management Solution").some((m) => m.id === "payments"));
+a("watch list: KHC procurement page swept every run", JSON.parse(fs.readFileSync(new URL("../data/nonprofit-watch.json", import.meta.url), "utf8")).entries.some((e) => /kyhousing\.org/.test(e.procurementUrl)) && loadPack("nonprofit").directSites.alwaysSweep);
+
 // ------------------------------------------------------------------ buyer industry
 const sec = (buyer, source = "ca.agg.merx", buyerType = "") => classifySector({ buyer, buyerType, source })?.id;
 a("sector: city, town, municipality", ["City of Coquitlam", "Town of Morinville", "Municipality of Jasper", "Nova Scotia Federation of Municipalities"].every((b) => sec(b) === "municipal"));
 a("sector: school district is K-12", sec("Surrey School District 36") === "k12" && sec("Conseil scolaire Viamonde") === "k12");
 a("sector: university is higher education", sec("Carleton University") === "higher-ed");
-a("sector: association is nonprofit", sec("Human Resources Professionals Association (HRPA)") === "nonprofit");
+a("sector: association is nonprofit / public-benefit", sec("Human Resources Professionals Association (HRPA)") === "nonprofit");
 a("sector: SAM defence office by parent org", sec("W6QK ACC WVA", "us.federal.sam.search", "DEPT OF DEFENSE") === "defence");
 a("sector: SAM default is US federal", sec("SOME OFFICE", "us.federal.sam.search") === "federal-us");
 a("sector: CanadaBuys federal department", sec("Shared Services Canada (SSC)", "ca.federal.canadabuys.open") === "federal-ca");

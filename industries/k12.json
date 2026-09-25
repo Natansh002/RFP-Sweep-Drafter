@@ -91,7 +91,10 @@
     "HRIS",
     "student information system",
     "financial system",
-    "school"
+    "school",
+    "cashless",
+    "school payments",
+    "fee management"
   ],
   "directSites": {
     "note": "8. Individual school-board procurement portals, swept every run (bids&tenders and Euna/Bonfire).",
@@ -118,7 +121,19 @@
       "budget system",
       "scheduling and absence",
       "absence management",
-      "time and attendance"
+      "time and attendance",
+      "cashless",
+      "cashless transaction",
+      "school cash",
+      "school payments",
+      "online payments",
+      "payment processing",
+      "fee management",
+      "student fees",
+      "transaction management solution",
+      "transaction management",
+      "school fees",
+      "SchoolDay"
     ],
     "bodyKeywords": [
       "chart of accounts",
@@ -132,7 +147,17 @@
       "manager self service",
       "requisition",
       "purchase order",
-      "procure to pay"
+      "procure to pay",
+      "parent payments",
+      "school generated funds",
+      "school activity fees",
+      "cash handling",
+      "field trips",
+      "cafeteria payments",
+      "parent portal",
+      "online payment",
+      "fee collection",
+      "point of sale"
     ],
     "must": [
       "buyer is an education body",
@@ -196,5 +221,8 @@
   },
   "sources": [
     "https://jorpex.com/sources/canada-provincial-portals/"
+  ],
+  "neverSkip": [
+    "School payments / cashless / fee management (SchoolDay), including OECM cooperative RFPs"
   ]
 }
