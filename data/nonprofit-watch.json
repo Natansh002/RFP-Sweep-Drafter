@@ -13,6 +13,17 @@
       "segment": "nonprofit",
       "source": "state housing finance agency's own procurement page, confirmed live",
       "verified": "2026-09-25"
+    },
+    {
+      "name": "Toronto Public Library",
+      "domain": "torontopubliclibrary.ca",
+      "procurementUrl": "https://www.torontopubliclibrary.ca/about-the-library/procurement/",
+      "platform": "own website (also posts on MERX)",
+      "browser": true,
+      "country": "Canada",
+      "segment": "nonprofit",
+      "source": "public library's own procurement page, confirmed live",
+      "verified": "2026-09-25"
     }
   ],
   "entryShape": {

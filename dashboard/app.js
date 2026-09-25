@@ -89,14 +89,23 @@ function dueCell(due) {
   return h("span", { class: `due ${d < 0 ? "over" : d <= 7 ? "soon" : ""}` }, due, d != null ? ` (${d < 0 ? `${-d}d late` : `${d}d`})` : "");
 }
 
-async function mutate(fn, okMsg) {
-  try {
-    await fn();
-    if (okMsg) toast(okMsg);
-  } catch (e) {
-    toast(e.status === 409 ? `${e.message}\nReloaded the latest version.` : e.message, true);
-  }
-  await loadLedger();
+// Edits go one at a time, and each sends the latest version number known at send
+// time (not the one captured when the row was drawn), so quick successive edits
+// never collide with the background refresh.
+let mutationChain = Promise.resolve();
+const revOf = (id) => state.ledger?.findings.find((x) => x.id === id)?.rev ?? 0;
+const actionRevOf = (id, aid) => state.ledger?.findings.find((x) => x.id === id)?.actions?.find((a) => a.id === aid)?.rev ?? 0;
+function mutate(fn, okMsg) {
+  mutationChain = mutationChain.then(async () => {
+    try {
+      await fn();
+      if (okMsg) toast(okMsg);
+    } catch (e) {
+      toast(e.status === 409 ? `${e.message}\nReloaded the latest version.` : e.message, true);
+    }
+    await loadLedger();
+  });
+  return mutationChain;
 }
 
 // ------------------------------------------------------------------ loading
@@ -210,7 +219,7 @@ function filtered() {
 }
 
 function statusSelect(f) {
-  return h("select", { "aria-label": "Status", onchange: (e) => mutate(() => api("PATCH", `/api/findings/${f.id}`, { status: e.target.value, rev: f.rev }), `Status → ${e.target.value}`) },
+  return h("select", { "aria-label": "Status", onchange: (e) => mutate(() => api("PATCH", `/api/findings/${f.id}`, { status: e.target.value, rev: revOf(f.id) }), `Status → ${e.target.value}`) },
     ...state.meta.statuses.map((s) => h("option", { value: s, selected: s === f.status }, s)));
 }
 
@@ -223,6 +232,11 @@ function assigneeInput(value, placeholder, onSave) {
 }
 
 function renderFindings() {
+  renderFindingsRows();
+  if (STATIC) lockEdits();
+}
+
+function renderFindingsRows() {
   const rows = filtered();
   const tbody = $("#findings tbody");
   tbody.replaceChildren();
@@ -243,7 +257,7 @@ function renderFindings() {
       h("td", {}, h("span", { title: sectorOf(f) ? `Inferred: ${sectorOf(f).basis}` : "" }, sectorOf(f)?.label ?? industryName(f.industry))),
       h("td", {}, f.closeDate ? h("span", { class: `due ${d < 0 ? "over" : d <= 14 ? "soon" : ""}` }, f.closeDate, h("br"), d < 0 ? "closed" : `${d} days`) : h("span", { class: "unassigned" }, "not published")),
       h("td", {}, statusSelect(f)),
-      h("td", {}, assigneeInput(f.assignee, f.suggestedAssignee ? `suggest: ${f.suggestedAssignee}` : "unassigned", (v) => mutate(() => api("PATCH", `/api/findings/${f.id}`, { assignee: v, rev: f.rev }), v ? `Assigned to ${v}` : "Unassigned"))),
+      h("td", {}, assigneeInput(f.assignee, f.suggestedAssignee ? `suggest: ${f.suggestedAssignee}` : "unassigned", (v) => mutate(() => api("PATCH", `/api/findings/${f.id}`, { assignee: v, rev: revOf(f.id) }), v ? `Assigned to ${v}` : "Unassigned"))),
       h("td", { class: "num" }, `${acts.filter((a) => a.done).length}/${acts.length}`),
       h("td", {}, h("button", { class: "link", "aria-expanded": String(isOpen), onclick: () => { isOpen ? state.open.delete(f.id) : state.open.add(f.id); renderFindings(); } }, isOpen ? "Close" : "Open")),
     ));
@@ -253,7 +267,7 @@ function renderFindings() {
 
 function detailRow(f) {
   const notes = h("textarea", { "aria-label": "Notes", placeholder: "Notes for the team", value: f.notes || "" });
-  notes.addEventListener("change", () => mutate(() => api("PATCH", `/api/findings/${f.id}`, { notes: notes.value, rev: f.rev }), "Notes saved"));
+  notes.addEventListener("change", () => mutate(() => api("PATCH", `/api/findings/${f.id}`, { notes: notes.value, rev: revOf(f.id) }), "Notes saved"));
 
   const newTitle = h("input", { placeholder: "New action item", "aria-label": "New action title" });
   const newWho = h("input", { class: "assignee", list: "team", placeholder: f.assignee || "assignee", "aria-label": "New action assignee" });
@@ -266,7 +280,7 @@ function detailRow(f) {
   const draftBox = h("textarea", { class: "draft", "aria-label": "Response draft", value: f.draft?.response || "" });
   const draftArea = f.draft?.response
     ? [draftBox, h("div", { class: "row" },
-        h("button", { onclick: () => mutate(() => api("PATCH", `/api/findings/${f.id}`, { draftResponse: draftBox.value, rev: f.rev }), "Draft saved") }, "Save draft"),
+        h("button", { onclick: () => mutate(() => api("PATCH", `/api/findings/${f.id}`, { draftResponse: draftBox.value, rev: revOf(f.id) }), "Draft saved") }, "Save draft"),
         h("button", { class: "keep", onclick: async () => { try { await navigator.clipboard.writeText(draftBox.value); toast("Draft copied"); } catch { draftBox.select(); toast("Select-all done; copy with ⌘C / Ctrl+C"); } } }, "Copy"),
         f.draftEdited ? h("span", { class: "hint" }, "Edited by a person. Sweeps will not overwrite it.") : h("span", { class: "hint" }, "First draft from the drafter. Not reviewed."))]
     : [h("p", { class: "hint" }, "No response draft yet. Review-band findings are drafted on request."),
@@ -281,7 +295,7 @@ function detailRow(f) {
         notes,
         f.changed ? h("div", { class: "changed-box" },
           h("strong", {}, "Changed since last sweep: "), f.changed.what.join("; "), " ",
-          h("button", { onclick: () => mutate(() => api("PATCH", `/api/findings/${f.id}`, { acknowledgeChange: true, rev: f.rev }), "Change acknowledged") }, "Acknowledge")) : null,
+          h("button", { onclick: () => mutate(() => api("PATCH", `/api/findings/${f.id}`, { acknowledgeChange: true, rev: revOf(f.id) }), "Change acknowledged") }, "Acknowledge")) : null,
         keyDatesBlock(f),
         h("h3", { class: "mt" }, "Go / no-go scorecard"),
         goNoGoBlock(f),
@@ -309,7 +323,7 @@ function goNoGoBlock(f) {
   return h("div", {},
     h("table", { class: "gng-table" }, h("tbody", {}, ...(cfg.criteria ?? []).map((c) => h("tr", {},
       h("td", {}, c.label, h("span", { class: "hint" }, ` · ${c.weight}`)),
-      h("td", {}, h("select", { "aria-label": c.label, onchange: (e) => mutate(() => api("PATCH", `/api/findings/${f.id}`, { goNoGo: { [c.id]: e.target.value }, rev: f.rev })) },
+      h("td", {}, h("select", { "aria-label": c.label, onchange: (e) => mutate(() => api("PATCH", `/api/findings/${f.id}`, { goNoGo: { [c.id]: e.target.value }, rev: revOf(f.id) })) },
         ...["unknown", "yes", "partial", "no"].map((v) => h("option", { value: v, selected: (f.goNoGo?.[c.id] ?? "unknown") === v }, v)))))))),
     h("p", { class: `gng-result ${g.verdict}` }, g.answered ? `${g.pct}% — ${g.verdict}${g.verdict === "incomplete" ? ` (${g.answered}/${g.of} answered)` : ""} · threshold ${cfg.threshold ?? 65}%` : "Not scored yet. Answer each criterion; the decision stays a person's."));
 }
@@ -317,7 +331,7 @@ function goNoGoBlock(f) {
 function outcomeBlock(f) {
   const field = (label, key, value, attrs = {}) => {
     const el = h("input", { value: value ?? "", "aria-label": label, placeholder: label, ...attrs });
-    el.addEventListener("change", () => mutate(() => api("PATCH", `/api/findings/${f.id}`, { [key]: el.value, rev: f.rev }), `${label} saved`));
+    el.addEventListener("change", () => mutate(() => api("PATCH", `/api/findings/${f.id}`, { [key]: el.value, rev: revOf(f.id) }), `${label} saved`));
     return el;
   };
   return h("div", { class: "row" },
@@ -338,8 +352,8 @@ function complianceBlock(f) {
   const statuses = state.meta.complianceStatuses;
   return h("div", { class: "compliance" }, ...f.requirements.map((r) => {
     const t = f.compliance?.[r.id] ?? {};
-    const owner = assigneeInput(t.owner, "owner", (v) => mutate(() => api("PATCH", `/api/findings/${f.id}`, { compliance: { [r.id]: { owner: v } }, rev: f.rev })));
-    const st = h("select", { "aria-label": "Requirement status", onchange: (e) => mutate(() => api("PATCH", `/api/findings/${f.id}`, { compliance: { [r.id]: { status: e.target.value } }, rev: f.rev })) },
+    const owner = assigneeInput(t.owner, "owner", (v) => mutate(() => api("PATCH", `/api/findings/${f.id}`, { compliance: { [r.id]: { owner: v } }, rev: revOf(f.id) })));
+    const st = h("select", { "aria-label": "Requirement status", onchange: (e) => mutate(() => api("PATCH", `/api/findings/${f.id}`, { compliance: { [r.id]: { status: e.target.value } }, rev: revOf(f.id) })) },
       ...statuses.map((s) => h("option", { value: s, selected: (t.status ?? "Open") === s }, s)));
     return h("div", { class: `req ${t.status === "Done" || t.status === "N/A" ? "done" : ""}` }, h("div", { class: "rtext" }, h("span", { class: "tag" }, r.kind), " ", r.text), h("div", { class: "rctl" }, owner, st));
   }));
@@ -347,10 +361,10 @@ function complianceBlock(f) {
 
 function actionLi(f, a) {
   return h("li", { class: a.done ? "done" : "" },
-    h("input", { type: "checkbox", checked: a.done, "aria-label": "Done", onchange: (e) => mutate(() => api("PATCH", `/api/findings/${f.id}/actions/${a.id}`, { done: e.target.checked, rev: a.rev })) }),
+    h("input", { type: "checkbox", checked: a.done, "aria-label": "Done", onchange: (e) => mutate(() => api("PATCH", `/api/findings/${f.id}/actions/${a.id}`, { done: e.target.checked, rev: actionRevOf(f.id, a.id) })) }),
     h("span", { class: "t" }, a.title),
-    assigneeInput(a.assignee, "unassigned", (v) => mutate(() => api("PATCH", `/api/findings/${f.id}/actions/${a.id}`, { assignee: v, rev: a.rev }), v ? `Action assigned to ${v}` : "Action unassigned")),
-    dateInput(a.due, (v) => mutate(() => api("PATCH", `/api/findings/${f.id}/actions/${a.id}`, { due: v || null, rev: a.rev }))),
+    assigneeInput(a.assignee, "unassigned", (v) => mutate(() => api("PATCH", `/api/findings/${f.id}/actions/${a.id}`, { assignee: v, rev: actionRevOf(f.id, a.id) }), v ? `Action assigned to ${v}` : "Action unassigned")),
+    dateInput(a.due, (v) => mutate(() => api("PATCH", `/api/findings/${f.id}/actions/${a.id}`, { due: v || null, rev: actionRevOf(f.id, a.id) }))),
   );
 }
 
@@ -369,10 +383,10 @@ function renderActions() {
     .sort((x, y) => String(x.a.due ?? "9999").localeCompare(String(y.a.due ?? "9999")));
   $("#actionsEmpty").hidden = rows.length > 0;
   $("#actions tbody").replaceChildren(...rows.map(({ f, a }) => h("tr", {},
-    h("td", {}, h("input", { type: "checkbox", checked: a.done, "aria-label": "Done", onchange: (e) => mutate(() => api("PATCH", `/api/findings/${f.id}/actions/${a.id}`, { done: e.target.checked, rev: a.rev })) })),
+    h("td", {}, h("input", { type: "checkbox", checked: a.done, "aria-label": "Done", onchange: (e) => mutate(() => api("PATCH", `/api/findings/${f.id}/actions/${a.id}`, { done: e.target.checked, rev: actionRevOf(f.id, a.id) })) })),
     h("td", {}, a.title),
     h("td", { class: "title" }, h("button", { class: "link", onclick: () => { state.open.add(f.id); switchTab("findings"); } }, f.title.slice(0, 80)), h("div", { class: "buyer" }, f.buyer || "")),
-    h("td", {}, assigneeInput(a.assignee, "unassigned", (v) => mutate(() => api("PATCH", `/api/findings/${f.id}/actions/${a.id}`, { assignee: v, rev: a.rev }), v ? `Assigned to ${v}` : "Unassigned"))),
+    h("td", {}, assigneeInput(a.assignee, "unassigned", (v) => mutate(() => api("PATCH", `/api/findings/${f.id}/actions/${a.id}`, { assignee: v, rev: actionRevOf(f.id, a.id) }), v ? `Assigned to ${v}` : "Unassigned"))),
     h("td", {}, dueCell(a.due)),
   )));
 }
@@ -486,7 +500,9 @@ function setupSweepForm() {
   $("#sCap").replaceChildren(h("option", { value: "" }, "All capabilities"), ...m.capabilities.map((c) => h("option", { value: c.id }, c.label)));
   $("#sDays").replaceChildren(...m.dateRanges.map((d) => h("option", { value: d.id, selected: d.id === "30" }, d.label)));
   const saved = (() => { try { return JSON.parse(localStorage.getItem("rfp.sweep") || "{}"); } catch { return {}; } })();
-  for (const [k, id] of [["industry", "sIndustry"], ["geo", "sGeo"], ["cap", "sCap"], ["days", "sDays"]]) if (saved[k] != null) $(`#${id}`).value = saved[k];
+  for (const [k, id] of [["industry", "sIndustry"], ["geo", "sGeo"], ["cap", "sCap"], ["days", "sDays"], ["status", "sStatus"]]) if (saved[k] != null) $(`#${id}`).value = saved[k];
+  // Changing the status filter re-filters at once; no new sweep is needed.
+  $("#sStatus").addEventListener("change", () => { state.sweepIds = null; state.sweepFiltered = true; renderSweepResults(); });
   const note = STATIC
     ? ["Searches the latest scheduled sweep of CanadaBuys open data, SAM.gov and the public portals (refreshed every 6 hours)."]
     : ["Runs a live sweep of CanadaBuys open data, SAM.gov and the public portals, then scores every posting. Takes up to a minute."];
@@ -497,8 +513,8 @@ function setupSweepForm() {
 }
 
 function sweepParams() {
-  const p = { industry: $("#sIndustry").value, geography: $("#sGeo").value, capability: $("#sCap").value, days: $("#sDays").value };
-  try { localStorage.setItem("rfp.sweep", JSON.stringify({ industry: p.industry, geo: p.geography, cap: p.capability, days: p.days })); } catch { /* ignore */ }
+  const p = { industry: $("#sIndustry").value, geography: $("#sGeo").value, capability: $("#sCap").value, days: $("#sDays").value, status: $("#sStatus").value };
+  try { localStorage.setItem("rfp.sweep", JSON.stringify({ industry: p.industry, geo: p.geography, cap: p.capability, days: p.days, status: p.status })); } catch { /* ignore */ }
   return p;
 }
 
@@ -511,6 +527,20 @@ function industryMatch(f, sel) {
   return f.industry === sel; // older saved choice
 }
 
+const OPEN_STATUSES = new Set(["New", "Qualifying", "Pursuing", "Drafting"]);
+/** Active: still open. Past due: closing date passed while we had not submitted or decided. Closed: date passed or decided. */
+function lifecycle(f, today = new Date().toISOString().slice(0, 10)) {
+  const passed = f.closeDate && f.closeDate < today;
+  if (!passed && OPEN_STATUSES.has(f.status ?? "New")) return "active";
+  if (passed && OPEN_STATUSES.has(f.status ?? "New")) return "pastdue";
+  return "closed";
+}
+function statusMatch(f, want) {
+  if (!want || want === "all") return true;
+  const l = lifecycle(f);
+  return want === "closed" ? l !== "active" : l === want;
+}
+
 function clientFilter(findings, p) {
   const geo = state.meta.geographies.find((g) => g.id === p.geography)?.countries ?? ["CA", "US"];
   const days = state.meta.dateRanges.find((d) => d.id === p.days)?.days;
@@ -521,8 +551,7 @@ function clientFilter(findings, p) {
     (!f.country || geo.includes(f.country)) &&
     (!p.capability || (f.capabilities ?? []).some((c) => c.id === p.capability)) &&
     (!since || !f.publishedDate || f.publishedDate >= since) &&
-    (!f.closeDate || f.closeDate >= today) &&
-    !["Archived", "No-bid", "Lost"].includes(f.status));
+    statusMatch(f, p.status ?? "active"));
 }
 
 async function runSearch() {
@@ -558,6 +587,32 @@ async function runSearch() {
   renderSweepResults();
 }
 
+/** What each workflow step shows when clicked. */
+const FLOW_FILTERS = {
+  understand: { label: "Read in depth", test: (f) => (f.requirements ?? []).length > 0 || !!f.workspace?.analysis },
+  qualify: { label: "High fit", test: (f) => f.band === "pursue" },
+  assign: { label: "Assigned", test: (f) => !!f.assignee, fallback: { label: "Unassigned (none are assigned yet)", test: (f) => !f.assignee } },
+  answer: { label: "Drafted", test: (f) => !!f.workspace?.answers, empty: "Nothing drafted yet. Open an opportunity and press Draft response." },
+  review: { label: "Red-team ready", test: (f) => f.workspace?.redTeam?.readiness === "Ready", empty: "Nothing has passed the red-team check yet. Open a drafted opportunity and run Red-team." },
+};
+
+function onFlowStep(step) {
+  if (step === "discover") {
+    state.flowFilter = null;
+    $(".sweep-card")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    $("#sRun")?.focus();
+    return renderSweepResults();
+  }
+  if (step === "export") {
+    const ws = state.ws ?? state.aws;
+    if (ws?.analysis) return exportScoring(ws);
+    return $("#exportXlsx") ? $("#exportXlsx").click() : toast("Open an opportunity first, then export its scoring file.");
+  }
+  state.flowFilter = state.flowFilter === step ? null : step;
+  renderSweepResults();
+  $("#sResults")?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
 /** Live numbers on the workflow strip, and which step the person is on. */
 function renderFlow(list) {
   const set = (id, t) => { const el = $(`#${id}`); if (el) el.textContent = t; };
@@ -577,17 +632,36 @@ function renderFlow(list) {
     const i = order.indexOf(li.dataset.step), cur = order.indexOf(stage);
     li.classList.toggle("active", i === cur);
     li.classList.toggle("done", i < cur);
+    li.classList.toggle("filtering", state.flowFilter === li.dataset.step);
+    if (!li.dataset.wired) {
+      li.dataset.wired = "1";
+      li.setAttribute("role", "button");
+      li.setAttribute("tabindex", "0");
+      li.addEventListener("click", () => onFlowStep(li.dataset.step));
+      li.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onFlowStep(li.dataset.step); } });
+    }
+    li.title = { discover: "Go to the sweep", export: "Export the scoring file" }[li.dataset.step] ?? `Show: ${FLOW_FILTERS[li.dataset.step]?.label}`;
   }
 }
 
 function renderSweepResults() {
   const box = $("#sResults");
   if (!box || !state.allLedger) return;
-  const p = { industry: $("#sIndustry").value, geography: $("#sGeo").value, capability: $("#sCap").value, days: $("#sDays").value };
-  const list = (state.sweepIds ? state.allLedger.findings.filter((f) => state.sweepIds.has(f.id)) : clientFilter(state.allLedger.findings, p)).sort((a, b) => b.score - a.score);
-  const high = list.filter((f) => f.band === "pursue").length, review = list.filter((f) => f.band === "review").length;
+  const p = { industry: $("#sIndustry").value, geography: $("#sGeo").value, capability: $("#sCap").value, days: $("#sDays").value, status: $("#sStatus").value };
+  let list = (state.sweepIds && p.status === "active" ? state.allLedger.findings.filter((f) => state.sweepIds.has(f.id)) : clientFilter(state.allLedger.findings, p)).sort((a, b) => b.score - a.score);
   renderFlow(state.sweepIds ? list : null);
+  let flowNote = null;
+  if (state.flowFilter && FLOW_FILTERS[state.flowFilter]) {
+    let ff = FLOW_FILTERS[state.flowFilter];
+    let narrowed = list.filter(ff.test);
+    if (!narrowed.length && ff.fallback) { ff = ff.fallback; narrowed = list.filter(ff.test); }
+    flowNote = h("div", { class: "flow-note" }, h("span", {}, "Showing: ", h("strong", {}, ff.label), ` · ${narrowed.length} of ${list.length}`), h("button", { class: "keep link", onclick: () => { state.flowFilter = null; renderSweepResults(); } }, "Show all ✕"));
+    if (!narrowed.length && ff.empty) flowNote.append(h("div", { class: "hint" }, ff.empty));
+    list = narrowed;
+  }
+  const high = list.filter((f) => f.band === "pursue").length, review = list.filter((f) => f.band === "review").length;
   box.replaceChildren(
+    flowNote,
     h("div", { class: "results-head" },
       h("h2", {}, `${list.length} ${list.length === 1 ? "opportunity" : "opportunities"} found`),
       h("span", { class: "counts" }, h("span", { class: "pill pursue" }, `${high} High fit`), " ", h("span", { class: "pill review" }, `${review} Review`), state.sweepLow != null ? [" ", h("span", { class: "pill low" }, `${state.sweepLow} Low fit (not listed)`)] : "")),
@@ -604,7 +678,7 @@ function renderSweepResults() {
           h("td", {}, f.closeDate ? h("span", { class: `due ${d < 0 ? "over" : d <= 14 ? "soon" : ""}` }, f.closeDate, h("br"), `${d} days`) : h("span", { class: "unassigned" }, "not stated")),
           h("td", { class: "num" }, f.estimatedValue ? money(f.estimatedValue) : "—"),
           h("td", {}, f.assignee || h("span", { class: "unassigned" }, f.team?.opportunityOwner ? `suggest: ${f.team.opportunityOwner}` : "unassigned")),
-          h("td", {}, f.status),
+          h("td", {}, f.status, (() => { const l = lifecycle(f); return l === "active" ? null : h("div", {}, h("span", { class: `tag life-${l}` }, l === "pastdue" ? "past due" : "closed")); })()),
           h("td", {}, h("button", { class: "primary small", onclick: () => openWorkspace(f, "#sWorkspace") }, "Open")));
       })))) : emptySweep(p));
 }
@@ -612,11 +686,11 @@ function renderSweepResults() {
 function emptySweep(p) {
   if (!state.sweepIds) return h("p", { class: "empty" }, "Pick what you are looking for and press Run RFP Sweep.");
   const all = state.allLedger?.findings ?? [];
-  const label = (k, v) => ({ industry: v ? (state.meta.sectors.find((x) => `sector:${x.id}` === v)?.label ?? state.meta.industries.find((i) => `pack:${i.id}` === v)?.name ?? v) : "All industries", geography: state.meta.geographies.find((g) => g.id === v)?.label, capability: v ? state.meta.capabilities.find((c) => c.id === v)?.label : "All capabilities", days: state.meta.dateRanges.find((d) => d.id === v)?.label })[k];
+  const label = (k, v) => ({ industry: v ? (state.meta.sectors.find((x) => `sector:${x.id}` === v)?.label ?? state.meta.industries.find((i) => `pack:${i.id}` === v)?.name ?? v) : "All industries", geography: state.meta.geographies.find((g) => g.id === v)?.label, capability: v ? state.meta.capabilities.find((c) => c.id === v)?.label : "All capabilities", days: state.meta.dateRanges.find((d) => d.id === v)?.label, status: { active: "Active", pastdue: "Past due", closed: "Closed", all: "All statuses" }[v] })[k];
   const tries = [
-    ["capability", ""], ["days", "any"], ["geography", "na"], ["industry", ""],
+    ["capability", ""], ["days", "any"], ["geography", "na"], ["industry", ""], ["status", "all"],
   ].filter(([k, v]) => p[k] !== v).map(([k, v]) => ({ k, v, n: clientFilter(all, { ...p, [k]: v }).length })).filter((t) => t.n > 0);
-  const ids = { industry: "sIndustry", geography: "sGeo", capability: "sCap", days: "sDays" };
+  const ids = { industry: "sIndustry", geography: "sGeo", capability: "sCap", days: "sDays", status: "sStatus" };
   const [pk, pid] = (p.industry || "").split(":");
   const pack = state.meta.packs.find((x) => x.id === (pk === "pack" ? pid : state.meta.sectors.find((s) => s.id === pid)?.pack));
   const geo = state.meta.geographies.find((g) => g.id === p.geography)?.countries ?? ["CA", "US"];
@@ -684,7 +758,7 @@ function runAnalyze(ws, { silent } = {}) {
 function runDraft(ws) {
   if (!ws.analysis) runAnalyze(ws);
   if (!ws.analysis) return;
-  ws.answers = R().draftAnswers(ws.analysis.requirements, state.meta.knowledge, { matrix: state.meta.matrix });
+  ws.answers = R().draftAnswers(ws.analysis.requirements, state.meta.knowledge, { matrix: state.meta.matrix, buyer: ws.buyer ?? ws.finding?.buyer ?? "" });
   ws.proposal = R().buildProposal(ws.analysis, ws.answers, { text: ws.text, buyer: ws.buyer ?? "" });
   ws.redTeam = null;
   ws.tab = "responses";
@@ -854,7 +928,11 @@ function wsTab(ws) {
       ), a.compliance ? null : h("p", { class: "hint" }, "To screen compliance, load your draft proposal in Analyze a document."));
     case "responses":
       if (!ws.answers) return h("div", {}, h("p", { class: "empty" }, "Press Draft response. Answers come only from the approved knowledge base (library/knowledge.json); anything without an approved source is marked SME validation required."), h("button", { class: "primary keep", onclick: () => { runDraft(ws); renderWorkspace(ws); } }, "Draft response"));
-      return h("div", { class: "tablewrap" }, h("table", { class: "grid responses" },
+      return h("div", {}, h("div", { class: "row sme-row" },
+          h("button", { class: "keep", onclick: () => exportSmeReview(ws) }, "Export SME review (.xlsx)"),
+          h("label", { class: "button keep" }, "Import SME review", (() => { const i = h("input", { type: "file", accept: ".xlsx", hidden: true }); i.addEventListener("change", () => importSmeReview(ws, i)); return i; })()),
+          h("span", { class: "hint" }, "Send the review file to SMEs; load it back to apply their edits, notes and status.")),
+        h("div", { class: "tablewrap" }, h("table", { class: "grid responses" },
         h("thead", {}, h("tr", {}, ...["Requirement", "Draft", "Sources", "Confidence", "Owner", "Status"].map((x) => h("th", {}, x)))),
         h("tbody", {}, ...ws.answers.map((x) => {
           const ta = h("textarea", { class: "keep", value: x.draft, "aria-label": `Draft for ${x.reqId}` });
@@ -865,8 +943,8 @@ function wsTab(ws) {
             h("td", {}, ta),
             h("td", {}, x.sources.length ? x.sources.map((s) => h("div", { class: s.stale ? "stale" : "" }, `${s.id} (${s.similarity})${s.stale ? " STALE" : ""}`)) : h("span", { class: "hint" }, "none")),
             h("td", {}, h("span", { class: `status conf-${x.confidence}` }, x.confidence), x.validationRequired ? h("div", { class: "hint" }, "SME validation") : null),
-            h("td", {}, x.owner), h("td", {}, st));
-        }))));
+            h("td", {}, x.owner, x.smeNotes ? h("div", { class: "hint" }, `SME: ${x.smeNotes}`) : null), h("td", {}, st));
+        })))));
     case "risks": return a.risks.length ? h("ul", { class: "risk-list" }, ...a.risks.map((r) => h("li", { class: `sev-${r.severity}` }, h("strong", {}, `${r.severity.toUpperCase()}: ${r.label}`), h("div", { class: "hint" }, r.evidence)))) : h("p", { class: "empty" }, "No risk patterns found. Legal still reviews the terms.");
     case "team": {
       const t = ws.team ?? R().recommendTeam(R().matchCapabilities(ws.title, ws.text), state.meta.matrix);
@@ -950,6 +1028,32 @@ const loaded = {};
 function loadScript(src) {
   if (!loaded[src]) loaded[src] = new Promise((res, rej) => { const el = h("script", { src }); el.onload = res; el.onerror = () => rej(new Error(`could not load ${src}`)); document.head.append(el); });
   return loaded[src];
+}
+
+async function exportSmeReview(ws) {
+  if (!ws.answers) return toast("Draft the responses first.", true);
+  try {
+    await loadScript("vendor/exceljs.min.js");
+    const wb = await R().buildSmeReviewWorkbook(window.ExcelJS, { title: ws.title, buyer: ws.buyer ?? "", answers: ws.answers, openItems: ws.answers.filter((a) => a.validationRequired).map((a) => `${a.reqId} - needs SME validation`) });
+    downloadBlob(`${slug(ws.title)}-SME-review.xlsx`, new Blob([await wb.xlsx.writeBuffer()], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+    toast("SME review file downloaded");
+  } catch (e) { toast(`Export failed: ${e.message}`, true); }
+}
+
+async function importSmeReview(ws, input) {
+  const file = input.files[0];
+  input.value = "";
+  if (!file) return;
+  try {
+    await loadScript("vendor/exceljs.min.js");
+    const parsed = await R().parseSmeReviewWorkbook(window.ExcelJS, await file.arrayBuffer());
+    const n = R().applySmeReview(ws.answers, parsed.rows);
+    ws.proposal = R().buildProposal(ws.analysis, ws.answers, { text: ws.text, buyer: ws.buyer ?? "" });
+    ws.redTeam = null;
+    persist(ws, ["answers", "proposal"]);
+    renderWorkspace(ws);
+    toast(`${n} of ${ws.answers.length} answer(s) updated from the SME review`);
+  } catch (e) { toast(`Import failed: ${e.message}`, true); }
 }
 
 async function exportScoring(ws) {

@@ -36,6 +36,13 @@ If a user says "we are responding to X, did the sweep find it?", check `store/al
 not on a swept source, seen but dropped by the relevance gate, or closed before a sweep
 ran. Fix the cause (source, keyword, buyer type), add a "never skip" test, and say which it was.
 
+## Writing responses
+
+Use the `rfp-response-writer` skill (`.claude/skills/rfp-response-writer/SKILL.md`) for
+drafting, SME review and learning. Reviewed answers live only in
+`library/private/knowledge.local.json` (gitignored); never copy them into the repo,
+the published site or any tracked file.
+
 ## Workflow
 
 1. `npm run check` — config valid, tests pass.

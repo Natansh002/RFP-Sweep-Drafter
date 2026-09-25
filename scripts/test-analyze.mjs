@@ -16,6 +16,9 @@ import { score } from "../lib/score.mjs";
 import { browserBundle } from "../lib/bundle.mjs";
 import { industryIds, loadPack, loadTenant, tenantIds } from "../lib/config.mjs";
 import { classifySector } from "../lib/sector.mjs";
+import { effectivePack } from "../lib/pack.mjs";
+import { buildSmeReviewWorkbook, parseSmeReviewWorkbook, applySmeReview } from "../lib/smereview.mjs";
+import { namedOrganizations, answerSkeleton, subAsks } from "../lib/respond.mjs";
 
 let fails = 0, passes = 0;
 const a = (name, cond) => { if (cond) passes++; else { fails++; console.log(`FAIL: ${name}`); } };
@@ -184,12 +187,42 @@ a("sector: library and housing corporation are nonprofit / public-benefit", clas
 a("capability: SchoolDay space recognised", matchCapabilities("Cashless Transaction Management Solution").some((m) => m.id === "payments"));
 a("watch list: KHC procurement page swept every run", JSON.parse(fs.readFileSync(new URL("../data/nonprofit-watch.json", import.meta.url), "utf8")).entries.some((e) => /kyhousing\.org/.test(e.procurementUrl)) && loadPack("nonprofit").directSites.alwaysSweep);
 
+// ------------------------------------------------------------------ response writer skill (synthetic data only)
+{
+  const QS = `SECTION 1 ORGANIZATIONAL CHANGE MANAGEMENT
+1.0.1 Describe your approach to designing approval workflows. In your response, explain how you handle exceptions and escalation. Provide examples from similar implementations.
+1.0.2 Describe how you train IT staff. Include supporting materials such as a training plan.`;
+  const qa = analyzeRfp({ text: QS, packs, now: NOW });
+  const q1 = qa.requirements.find((r) => r.id === "1.0.1");
+  a("skill: numbered RFP questions kept with their numbers as response items", q1?.level === "question" && qa.requirements.some((r) => r.id === "1.0.2"));
+  a("skill: sub-asks split in the order asked", subAsks(q1.text).length === 3 && /exceptions/.test(subAsks(q1.text)[1]));
+  const sk = answerSkeleton(q1, { buyer: "Example Library", owner: "Finance SME" });
+  a("skill: skeleton follows the pattern and never names a customer", /Example Library's own terms/.test(sk) && /anonymized/.test(sk) && /SME validation required/.test(sk));
+  const kbq = [{ id: "kb-1", question: "Describe your approach to designing approval workflows and escalation", answer: "Workshops map {buyer}'s approval authority matrix before workflows are configured.", tags: ["approval workflows", "escalation"], lastReviewed: "2026-09-01" }];
+  const qans = draftAnswers(qa.requirements, kbq, { now: NOW, buyer: "Example Library" });
+  a("skill: learned answer reused with {buyer} filled in and cited", /Example Library's approval authority matrix/.test(qans.find((x) => x.reqId === "1.0.1").draft) && /knowledge kb-1/.test(qans.find((x) => x.reqId === "1.0.1").draft));
+  a("skill: named customers caught, anonymized phrasing and the buyer allowed", namedOrganizations("At Lakeside School District we saved time. At a comparable Canadian public sector institution, too. We serve Example Library.", "Example Library").join() === "Lakeside School District");
+  const rtq = redTeam(qa, qans.map((x) => ({ ...x, draft: `${x.draft} At Lakeside School District this worked.` })), "", { now: NOW });
+  a("skill: red-team blocks named customers", rtq.blocking.some((b) => /Named organization/.test(b)));
+  const swb = await buildSmeReviewWorkbook(ExcelJS, { title: "Example RFP", buyer: "Example Library", answers: qans });
+  a("skill: SME review workbook has the template's layout", ["#", "Section", "SME", "Question", "Draft Answer", "SME Notes / Edits", "Status"].every((h, i) => swb.getWorksheet("SME Review").getRow(1).getCell(i + 1).value === h) && !!swb.getWorksheet("Instructions"));
+  const sws = swb.getWorksheet("SME Review");
+  sws.getCell(2, 6).value = "Tighten the second paragraph";
+  sws.getCell(2, 7).value = "Approved";
+  sws.getCell(2, 5).value = "Revised answer from the SME.";
+  const parsed = await parseSmeReviewWorkbook(ExcelJS, Buffer.from(await swb.xlsx.writeBuffer()));
+  const copy = qans.map((x) => ({ ...x }));
+  const nApplied = applySmeReview(copy, parsed.rows);
+  const edited = copy.find((x) => x.reqId === parsed.rows[0].id);
+  a("skill: SME edits, notes and status come back into the workspace", nApplied >= 1 && edited.status === "Approved" && edited.draft === "Revised answer from the SME." && /Tighten/.test(edited.smeNotes));
+}
+
 // ------------------------------------------------------------------ buyer industry
 const sec = (buyer, source = "ca.agg.merx", buyerType = "") => classifySector({ buyer, buyerType, source })?.id;
 a("sector: city, town, municipality", ["City of Coquitlam", "Town of Morinville", "Municipality of Jasper", "Nova Scotia Federation of Municipalities"].every((b) => sec(b) === "municipal"));
 a("sector: school district is K-12", sec("Surrey School District 36") === "k12" && sec("Conseil scolaire Viamonde") === "k12");
 a("sector: university is higher education", sec("Carleton University") === "higher-ed");
-a("sector: association is nonprofit / public-benefit", sec("Human Resources Professionals Association (HRPA)") === "nonprofit");
+a("sector: association is nonprofit", sec("Human Resources Professionals Association (HRPA)") === "nonprofit");
 a("sector: SAM defence office by parent org", sec("W6QK ACC WVA", "us.federal.sam.search", "DEPT OF DEFENSE") === "defence");
 a("sector: SAM default is US federal", sec("SOME OFFICE", "us.federal.sam.search") === "federal-us");
 a("sector: CanadaBuys federal department", sec("Shared Services Canada (SSC)", "ca.federal.canadabuys.open") === "federal-ca");

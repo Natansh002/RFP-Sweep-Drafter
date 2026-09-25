@@ -70,10 +70,11 @@ for (const id of tenantIds()) {
       }
     }
   }
-  // Closed findings nobody touched leave the list; anything a person worked on stays.
-  const today = new Date().toISOString().slice(0, 10);
+  // Closed findings stay 120 days so the Closed and Past due filters have history;
+  // after that, untouched ones leave the list. Anything a person worked on stays.
+  const cutoff = new Date(Date.now() - 120 * 86400000).toISOString().slice(0, 10);
   const before = ledger.findings.length;
-  ledger.findings = ledger.findings.filter((f) => !(f.closeDate && f.closeDate < today && (f.rev ?? 0) === 0 && !f.workspace && f.status === "New"));
+  ledger.findings = ledger.findings.filter((f) => !(f.closeDate && f.closeDate < cutoff && (f.rev ?? 0) === 0 && !f.workspace && f.status === "New"));
   if (before !== ledger.findings.length) console.log(`pruned ${before - ledger.findings.length} closed, untouched finding(s)`);
   saveLedger(ROOT, ledger);
 }

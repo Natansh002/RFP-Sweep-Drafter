@@ -25,6 +25,16 @@ GitHub Actions). Full editing: `npm run dashboard` on your machine.
 | Review | Red-team check: unanswered or unapproved mandatory items, SME markers, stale sources, page limits, generic phrasing, repetition. **Ready / Needs review** with blocking issues | RedTeam |
 | Learn | Won / lost / no-bid, loss reason and awardee on each finding, a Pipeline sheet with win rate, audit history and workspace versions | Learn |
 
+**Filters:** Industry (the buyer's sector), Geography, Capability, Date range and
+Status: **Active**, **Past due** (closing date passed while still open on our side),
+**Closed**, All. The workflow steps across the top filter the results when clicked.
+
+**Writing responses:** the `rfp-response-writer` skill (`.claude/skills/`) encodes how
+SME-reviewed answers are written: approach in the buyer's terms, every sub-ask in
+order, an anonymized comparable example, supplementary materials. Export an **SME
+review** workbook from any workspace, import it back, and `npm run learn` turns a
+finished review into reusable answers that stay on your machine.
+
 **How it analyzes:** pattern matching and TF-IDF text similarity, not a language
 model, and every output says so. It is deterministic, explains each score, and
 never fabricates a reference, certification, capability or metric.
@@ -36,6 +46,8 @@ npm install
 npm run dashboard                               # http://127.0.0.1:4173 → RFP Sweep tab
 npm run analyze -- --rfp path/to/rfp.pdf        # scoring .xlsx + summary .md in output/
 npm run check                                   # build + validate + tests
+npm run test:e2e                                # every screen, button and filter in a real browser
+npm run learn -- --file SME_Review.xlsx         # learn reviewed answers (kept private, gitignored)
 npm run new-tenant -- acme "Acme" --industries k12   # add your company first
 npm run sweep -- --tenant acme --width 1        # writes store/ and output/
 npm run dashboard                               # http://127.0.0.1:4173

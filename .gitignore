@@ -12,3 +12,5 @@ data/private/
 *customer*.json
 # Built by scripts/build-site.mjs; published by .github/workflows/pages.yml
 site/
+# Learned, company-confidential answers: local only, never committed or published.
+library/private/

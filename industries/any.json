@@ -78,7 +78,9 @@
     "system integration",
     "managed services",
     "software implementation",
-    "financial system"
+    "financial system",
+    "Dynamics GP",
+    "Business Central"
   ],
   "directSites": {
     "note": "Buyers whose RFPs never reach a portal.",
@@ -151,7 +153,14 @@
       "online payments",
       "payment processing",
       "fee management",
-      "transaction management solution"
+      "transaction management solution",
+      "Dynamics GP",
+      "Great Plains",
+      "Microsoft Dynamics",
+      "ERP replacement",
+      "ERP implementation",
+      "financial system replacement",
+      "finance and procurement system"
     ],
     "bodyKeywords": [
       "chart of accounts",
@@ -217,7 +226,25 @@
       "change management",
       "training services",
       "payment gateway",
-      "cash handling"
+      "cash handling",
+      "Dynamics GP",
+      "GP 2018",
+      "migrating off",
+      "end of life",
+      "end-of-life",
+      "end of support",
+      "legacy ERP",
+      "consolidated reporting",
+      "multi-entity",
+      "legal entities",
+      "Power BI",
+      "SharePoint",
+      "Power Apps",
+      "procure-to-pay",
+      "encumbrance",
+      "P-card",
+      "expense management",
+      "three-way match"
     ],
     "must": [
       "solicitation is for software, implementation, integration, migration, support or consulting services"

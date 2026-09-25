@@ -61,6 +61,11 @@ jobs:
       - name: Install headless browser
         run: npx playwright install --with-deps chromium
 
+      # Every screen, button and filter, in a real browser, on both the published
+      # build and the local dashboard. A broken screen never reaches the site.
+      - name: End-to-end test
+        run: npm run test:e2e
+
       - id: pages
         uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
 

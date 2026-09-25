@@ -94,7 +94,8 @@
     "school",
     "cashless",
     "school payments",
-    "fee management"
+    "fee management",
+    "Dynamics GP"
   ],
   "directSites": {
     "note": "8. Individual school-board procurement portals, swept every run (bids&tenders and Euna/Bonfire).",
@@ -133,7 +134,15 @@
       "transaction management solution",
       "transaction management",
       "school fees",
-      "SchoolDay"
+      "SchoolDay",
+      "Dynamics GP",
+      "Great Plains",
+      "Microsoft Dynamics",
+      "Business Central",
+      "ERP replacement",
+      "ERP implementation",
+      "financial system replacement",
+      "finance and procurement system"
     ],
     "bodyKeywords": [
       "chart of accounts",
@@ -157,7 +166,25 @@
       "parent portal",
       "online payment",
       "fee collection",
-      "point of sale"
+      "point of sale",
+      "Dynamics GP",
+      "GP 2018",
+      "migrating off",
+      "end of life",
+      "end-of-life",
+      "end of support",
+      "legacy ERP",
+      "consolidated reporting",
+      "multi-entity",
+      "legal entities",
+      "Power BI",
+      "SharePoint",
+      "Power Apps",
+      "procure-to-pay",
+      "encumbrance",
+      "P-card",
+      "expense management",
+      "three-way match"
     ],
     "must": [
       "buyer is an education body",

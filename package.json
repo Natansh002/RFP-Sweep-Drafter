@@ -20,7 +20,9 @@
     "check": "npm run build && npm run validate && npm test",
     "deploy:n8n": "node scripts/deploy-n8n.mjs",
     "site": "node scripts/build-site.mjs",
-    "analyze": "node scripts/analyze.mjs"
+    "analyze": "node scripts/analyze.mjs",
+    "learn": "node scripts/learn.mjs",
+    "test:e2e": "node scripts/test-e2e.mjs"
   },
   "dependencies": {
     "exceljs": "^4.4.0",

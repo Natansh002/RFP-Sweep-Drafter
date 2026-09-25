@@ -134,7 +134,10 @@
       "accounting system replacement",
       "finance and HR system",
       "financial management software",
-      "grants management system"
+      "grants management system",
+      "Great Plains",
+      "ERP implementation",
+      "finance and procurement system"
     ],
     "bodyKeywords": [
       "fund accounting",
@@ -166,7 +169,15 @@
       "Microsoft 365",
       "M365",
       "migrating off",
-      "migration from"
+      "migration from",
+      "Dynamics GP",
+      "GP 2018",
+      "legacy ERP",
+      "procure-to-pay",
+      "encumbrance",
+      "P-card",
+      "expense management",
+      "three-way match"
     ],
     "must": [
       "buyer is a nonprofit, charity, or public-benefit body",

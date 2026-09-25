@@ -93,7 +93,7 @@ function tenantSummary(id) {
 }
 
 const routes = [
-  ["GET", /^\/api\/meta$/, async () => ({ tenants: tenantIds().map(tenantSummary), ...sharedMeta() })],
+  ["GET", /^\/api\/meta$/, async () => ({ tenants: tenantIds().map(tenantSummary), ...sharedMeta({ includePrivate: true }) })],
 
   // Industry → Geography → Capability → Date range. Live sweep, merged into the all-industries pipeline.
   ["POST", /^\/api\/search$/, async (req) => {
