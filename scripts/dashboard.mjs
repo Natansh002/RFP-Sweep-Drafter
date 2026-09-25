@@ -408,6 +408,6 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, HOST, () => {
-  console.log(`RFP findings dashboard: http://${HOST}:${PORT}`);
+  console.log(`RFP Sweep and Drafter dashboard: http://${HOST}:${PORT}`);
   console.log(`Tenants: ${tenantIds().join(", ")}. Local only; nothing is sent to Jira, Confluence or any other internal tool.`);
 });

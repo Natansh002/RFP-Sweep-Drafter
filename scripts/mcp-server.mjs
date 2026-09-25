@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * RFP Sweep as an MCP server, so Claude (or another MCP client) can work with the
+ * RFP Sweep and Drafter as an MCP server, so Claude (or another MCP client) can work with the
  * pipeline next to your sales platform's own MCP connector.
  *
  *   npm run mcp        (stdio; registered for Claude Code in .mcp.json)
@@ -30,7 +30,7 @@ const text = (value) => ({ content: [{ type: "text", text: typeof value === "str
 const fitOf = (f, p) => (p ? { ...companyFit({ ...f, sourceText: String(f.sourceText ?? "").slice(0, 6000) }, p), basis: `fit to what ${p.name} sells` } : { score: f.score, band: f.band, reasons: f.reasons ?? [], basis: "sweep score (no company profile yet)" });
 const find = (id) => { const f = ledger().findings.find((x) => x.id === id); if (!f) throw new Error(`No opportunity ${id}. Use list_opportunities to find ids.`); return f; };
 
-const server = new McpServer({ name: "rfp-sweeper", version: "1.0.0" }, {
+const server = new McpServer({ name: "rfp-sweeper", title: "RFP Sweep and Drafter", version: "1.0.0" }, {
   instructions: "RFP opportunities found by the sweep, scored on the company's offering. To put one into a sales platform: call prepare_crm_opportunity, show the fields to the person, create the record with their sales-platform connector only after they confirm, then call link_crm_opportunity with the new record id. Never create, update or delete sales-platform records without the person's explicit confirmation.",
 });
 
@@ -129,4 +129,4 @@ server.registerTool("unlink_crm_opportunity", {
 });
 
 await server.connect(new StdioServerTransport());
-console.error("rfp-sweeper MCP server ready (stdio). Reads the local ledger; never calls a sales platform.");
+console.error("RFP Sweep and Drafter MCP server ready (stdio). Reads the local ledger; never calls a sales platform.");

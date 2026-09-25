@@ -197,6 +197,7 @@ async function suite(mode, url) {
   page.on("dialog", (d) => d.accept());
 
   await check(P("loads with the workflow strip and 7 steps"), async () => expect((await page.locator("#flowSteps li").count()) === 7, "flow steps missing"));
+  await check(P("named RFP Sweep and Drafter (tab title and heading)"), async () => { const title = await page.title(), h1 = (await page.locator("h1").first().textContent()).trim(); expect(title === "RFP Sweep and Drafter" && h1 === "RFP Sweep and Drafter", `title "${title}", heading "${h1}"`); });
   await check(P("every main tab opens its screen"), async () => {
     for (const t of ["analyze", "findings", "actions", "config", "sweep"]) { await tab(page, t); expect(await page.locator(`#tab-${t}`).isVisible(), `tab ${t} not visible`); }
     expect((await page.locator(".main-tabs button").allTextContents()).join("|") === "RFP Sweep|Analyze a document|Pipeline|Action items|Configuration", "the main tabs are not exactly RFP Sweep, Analyze a document, Pipeline, Action items, Configuration");

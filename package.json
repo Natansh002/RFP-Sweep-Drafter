@@ -2,7 +2,7 @@
   "name": "ionic-rfp-sweeper",
   "version": "0.2.0",
   "private": true,
-  "description": "Config-driven RFP sweeper and drafter for any Ionic operating company. Findings go to an Excel workbook and a local dashboard with assignees and action items. No Jira, no Confluence, no links to internal tools.",
+  "description": "RFP Sweep and Drafter: config-driven RFP sweep and response drafting for any Ionic operating company. Findings go to an Excel workbook and a local dashboard with assignees and action items. No Jira, no Confluence, no links to internal tools.",
   "type": "module",
   "engines": {
     "node": ">=20"
@@ -17,7 +17,7 @@
     "validate:strict": "node scripts/validate.mjs --strict",
     "build": "node scripts/build-workflows.mjs",
     "test": "RFP_TENANTS_DIR=scripts/fixtures/tenants node scripts/test-score.mjs && RFP_TENANTS_DIR=scripts/fixtures/tenants node scripts/test-app.mjs && RFP_TENANTS_DIR=scripts/fixtures/tenants node scripts/test-analyze.mjs && RFP_TENANTS_DIR=scripts/fixtures/tenants node scripts/test-profile.mjs && RFP_TENANTS_DIR=scripts/fixtures/tenants node scripts/test-documents.mjs && RFP_TENANTS_DIR=scripts/fixtures/tenants node scripts/test-access.mjs && RFP_TENANTS_DIR=scripts/fixtures/tenants node scripts/test-library.mjs",
-    "check": "npm run build && npm run validate && npm test",
+    "check": "node --check dashboard/app.js && npm run build && npm run validate && npm test",
     "deploy:n8n": "node scripts/deploy-n8n.mjs",
     "site": "node scripts/build-site.mjs",
     "analyze": "node scripts/analyze.mjs",

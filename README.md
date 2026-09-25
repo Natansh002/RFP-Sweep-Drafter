@@ -1,4 +1,4 @@
-# RFP Sweep & Drafter
+# RFP Sweep and Drafter
 
 An RFP operating system for professional services: **Find → Understand → Qualify →
 Assign → Answer → Proofread → Submit**. Give it your company's website and it works out
@@ -97,7 +97,7 @@ The **Configuration** tab (local dashboard) holds two things:
   (Azure Static Web Apps with Microsoft sign-in), only those emails get in; everyone else sees a
   no-access page. Set-up: [docs/private-hosting.md](docs/private-hosting.md). Once it works, set the
   repository variable `PUBLISH_PAGES=false` to retire the public copy.
-- **Sales platform (MCP).** `npm run mcp` runs RFP Sweep as an MCP server (registered in `.mcp.json`).
+- **Sales platform (MCP).** `npm run mcp` runs RFP Sweep and Drafter as an MCP server (registered in `.mcp.json`).
   Claude, with your Salesforce, HubSpot or Dynamics 365 connector, can list the best-fit RFPs, prepare
   the opportunity fields and, **after you confirm**, create the record and link it back. Links stay in
   `store/crm.json` on your machine. Details: [docs/sales-platform-mcp.md](docs/sales-platform-mcp.md).

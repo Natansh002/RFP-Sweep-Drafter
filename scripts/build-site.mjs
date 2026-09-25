@@ -82,7 +82,7 @@ fs.writeFileSync(path.join(OUT, ".nojekyll"), "");
 fs.writeFileSync(path.join(OUT, "staticwebapp.config.json"), JSON.stringify(hostConfig({ tenantId: process.env.AAD_TENANT_ID || null }), null, 2));
 fs.writeFileSync(path.join(OUT, "no-access.html"), `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="${CSP}"><title>No access · RFP Sweep</title><link rel="stylesheet" href="style.css?v=${V}"></head>
+<meta http-equiv="Content-Security-Policy" content="${CSP}"><title>No access · RFP Sweep and Drafter</title><link rel="stylesheet" href="style.css?v=${V}"></head>
 <body><main class="card no-access"><h1>You are signed in, but not on the access list</h1>
 <p>This RFP dashboard is open only to the work emails an admin has added in Configuration. Ask your RFP Manager to add you with your role.</p>
 <p><a href="/.auth/logout">Sign out</a></p></main></body></html>

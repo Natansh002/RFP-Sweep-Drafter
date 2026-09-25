@@ -1,11 +1,11 @@
 # Linking with Salesforce (or another sales platform) through MCP
 
-RFP Sweep runs as an **MCP server** next to your sales platform's own MCP connector.
+RFP Sweep and Drafter runs as an **MCP server** next to your sales platform's own MCP connector.
 Claude reads an RFP from the sweep and prepares the opportunity. **You confirm**, then
 Claude creates the record with *your* Salesforce (or HubSpot / Dynamics 365) connector
 and records the link here.
 
-RFP Sweep never calls the sales platform itself and never sends anything. It stores the
+RFP Sweep and Drafter never calls the sales platform itself and never sends anything. It stores the
 link (record id and URL) in `store/crm.json` on your machine only: never in git, never on
 a published page, never in the findings ledger.
 

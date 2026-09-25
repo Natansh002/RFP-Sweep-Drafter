@@ -1,4 +1,4 @@
-// RFP findings dashboard. Vanilla JS, no external requests: everything goes to
+// RFP Sweep and Drafter dashboard. Vanilla JS, no external requests: everything goes to
 // this dashboard's own /api on 127.0.0.1. All text from findings is rendered as
 // text, never as HTML.
 "use strict";
@@ -1731,7 +1731,7 @@ async function renderConfig() {
         try { const r = await fetch("/api/crm", { method: "PUT", headers: { "X-RFP-Dashboard": "1", "content-type": "application/json" }, body: JSON.stringify({ platform: e.target.value }) }); const j = await r.json(); if (!r.ok) throw new Error(j.error); state.crm = { ...state.crm, platform: j.platform }; toast(`Sales platform: ${R().CRM_NAMES[j.platform]}`); renderConfig(); } catch (err) { toast(err.message, true); }
       } }, ...R().CRM_PLATFORMS.map((p) => h("option", { value: p, selected: p === platform }, R().CRM_NAMES[p]))))),
       h("ol", { class: "steps" },
-        h("li", {}, "Claude Code opened in this folder loads the rfp-sweeper MCP server from .mcp.json (or add it to Claude: command node, argument scripts/mcp-server.mjs)."),
+        h("li", {}, "Claude Code opened in this folder loads the RFP Sweep and Drafter MCP server, named rfp-sweeper in .mcp.json. Or add it to Claude yourself: command node, argument scripts/mcp-server.mjs."),
         h("li", {}, `Connect your ${pname} connector in Claude.`),
         h("li", {}, `Ask Claude, e.g. "Create a ${pname} opportunity for the best-fit RFP closing this month". It prepares the fields; you confirm; your ${pname} connector creates the record; the link is recorded here.`)),
       h("p", { class: "hint" }, `Nothing is created in ${pname} without your confirmation, and this tool never calls ${pname} itself. Links stay in store/crm.json on this machine and never appear on a published page.`),
@@ -1764,7 +1764,7 @@ function crmPanel(ws) {
   return h("div", { class: "card crm-panel" },
     h("div", { class: "explain-head" }, h("h3", {}, `${pname} opportunity`), h("button", { class: "keep link", onclick: () => { ws.crmOpen = false; renderWorkspace(ws); } }, "Close")),
     link ? h("p", { class: "notice ok-note" }, `Linked to ${pname} record `, link.url ? h("a", { href: link.url, target: "_blank", rel: "noopener noreferrer" }, link.recordId) : link.recordId, ` on ${String(link.linkedAt ?? "").slice(0, 10)}. `, h("button", { class: "keep link", onclick: () => unlinkCrm(f.id, ws) }, "Unlink")) : null,
-    h("p", {}, `Ask Claude: "Create a ${pname} opportunity for RFP ${f.id}". It uses the rfp-sweeper MCP server and your ${pname} connector, shows you these fields and creates nothing until you confirm.`),
+    h("p", {}, `Ask Claude: "Create a ${pname} opportunity for RFP ${f.id}". It uses the RFP Sweep and Drafter MCP server and your ${pname} connector, shows you these fields and creates nothing until you confirm.`),
     h("table", { class: "facts" }, h("tbody", {}, ...Object.entries(fields).filter(([, v]) => v != null && v !== "").map(([k, v]) => h("tr", {}, h("th", {}, k), h("td", { class: "crm-value" }, String(v)))))),
     (payload.decide ?? []).length ? h("ul", { class: "plain hint" }, ...payload.decide.map((d) => h("li", {}, d))) : null,
     link ? null : h("div", { class: "row" }, h("span", { class: "hint" }, "Created it already? Link it:"), recordId, url, h("button", { class: "keep", onclick: async () => {
