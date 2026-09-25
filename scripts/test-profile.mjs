@@ -160,13 +160,15 @@ Links/Buttons:
 [About us](https://www.harborline.example/about/)
 [Contact](https://www.harborline.example/contact/)
 [Sitemap](https://www.harborline.example/sitemap/)
+[Privacy Policy](https://www.harborline.example/privacy-policy/)
+[Terms of Use](https://www.harborline.example/terms-of-use/)
 [Partner](https://other.example/)`;
   const f = markdownFacts(MD, "https://www.harborline.example/");
   a("markdown: title, headings (both styles) and text", f.title.startsWith("Fund accounting") && f.headings.includes("Fund accounting for nonprofits and school boards") && f.headings.includes("Payroll and HR") && /position control/.test(f.text));
   a("markdown: page links from the Links/Buttons list, images left out", f.links.some((l) => l.href === "https://www.harborline.example/solutions/payroll-hr/") && !f.links.some((l) => /\.webp/.test(l.href)));
   a("markdown: the link list is not read as page text", !/Links\/Buttons/.test(f.text));
   const next = profileLinks("https://www.harborline.example/", f, 5);
-  a("pages to read: products and about, never contact, sitemap or other sites", next.includes("https://www.harborline.example/solutions/payroll-hr") && next.includes("https://www.harborline.example/about") && !next.some((u) => /contact|sitemap|other\.example/.test(u)));
+  a("pages to read: products and about, never contact, sitemap or other sites", next.includes("https://www.harborline.example/solutions/payroll-hr") && next.includes("https://www.harborline.example/about") && !next.some((u) => /contact|sitemap|privacy|terms|other\.example/.test(u)));
   const P2 = buildProfile({ website: "https://www.harborline.example/", pages: [f] });
   a("name: the brand from a 'Tagline | Brand' title", P2.name === "Harborline Systems");
   const sum = profileSummary(P2);
