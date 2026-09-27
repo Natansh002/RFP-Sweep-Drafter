@@ -12,8 +12,15 @@ opportunity and work it through **Qualify → Assign → Analyze RFP → Draft r
 Proofread → RFP submission status**, then **export the scoring file** (Excel) and the
 proposal draft.
 
-Live: **https://natansh002.github.io/RFP-Sweep-Drafter/** (read-only, refreshed by
-GitHub Actions). Full editing: `npm run dashboard` on your machine.
+Three ways to run it:
+
+- **For your team: the internal host.** The whole app on your company's Azure App Service,
+  behind Microsoft sign-in. It holds one shared pipeline and sweeps on a schedule, and
+  admins manage the access list on its Configuration page. Set-up for your operations
+  team: [docs/internal-hosting.md](docs/internal-hosting.md).
+- **On your machine:** `npm run dashboard`, a one-person copy on 127.0.0.1.
+- **Public copy:** **https://natansh002.github.io/RFP-Sweep-Drafter/** (public procurement
+  data only, refreshed by GitHub Actions). Switch it off once the internal host works.
 
 | Step | What it does | Agent in the spec |
 |---|---|---|
@@ -91,12 +98,23 @@ websites, so there links are listed but not read: add the file instead, or use t
 
 ## Configuration
 
-The **Configuration** tab (local dashboard) holds two things:
+On the **internal host**, the **Configuration** tab is where admins run it:
 
-- **Users and access.** Work email plus one of the four roles. No names are stored. On the **private host**
-  (Azure Static Web Apps with Microsoft sign-in), only those emails get in; everyone else sees a
-  no-access page. Set-up: [docs/private-hosting.md](docs/private-hosting.md). Once it works, set the
-  repository variable `PUBLISH_PAGES=false` to retire the public copy.
+- **This host.** Signed-in account and role, sign-in, data folder and version. Checks show
+  anything left to set up: sign-in on, tenant locked, an admin, data kept across restarts,
+  schedule, last sweep, headless browser.
+- **Users and access.** Work email plus one of the four roles, and whether the person is
+  an admin. No names are stored. Only company accounts on the list get in, and everyone
+  else sees a no-access page. The first admins come from the `RFP_ADMINS` app setting.
+  Changes take effect at once.
+- **Scheduled sweep.** Days, time and time zone, plus **Run now** and the recent sweeps.
+- **Activity and backup.** Who changed the configuration and when, plus a one-file backup of
+  users, settings, the pipeline and the response library.
+
+Everyone on the list sees their own access. Only admins can change anything on this tab.
+Set-up: [docs/internal-hosting.md](docs/internal-hosting.md). The local copy's
+Configuration tab explains the same set-up and the app settings.
+
 - **Sales platform (MCP).** `npm run mcp` runs RFP Sweep and Drafter as an MCP server (registered in `.mcp.json`).
   Claude, with your Salesforce, HubSpot or Dynamics 365 connector, can list the best-fit RFPs, prepare
   the opportunity fields and, **after you confirm**, create the record and link it back. Links stay in
@@ -114,6 +132,12 @@ npm run learn -- --file SME_Review.xlsx         # learn reviewed answers (kept p
 npm run new-tenant -- acme "Acme" --industries k12   # add your company first
 npm run sweep -- --tenant acme --width 1        # writes store/ and output/
 npm run dashboard                               # http://127.0.0.1:4173
+```
+
+Run it the way the internal host does (sign-in simulated; for trying it out only):
+
+```bash
+RFP_MODE=internal RFP_AUTH_HEADERS=trust RFP_ADMINS=you@example.org RFP_DATA_DIR=/tmp/rfp RFP_BIND=127.0.0.1 npm run dashboard
 ```
 
 Add another operating company:
@@ -182,7 +206,7 @@ BidPrime, HigherGov and others. It covers what was adopted, what was left out on
 - **Unknown is not zero**, and a score built on three or more unknowns is capped at `review`.
 - **What could not be read is reported**, never dropped. `needs-browser`, `fetch-failed` and `blocked` channels are listed on the workbook's Coverage gaps sheet.
 - **Drafts invent nothing.** They use only the tenant's `profile`, its `offerings`, the library and the public posting. Everything else stays `[TODO]`. Pricing is never drafted.
-- **Findings stay local.** `store/` and `output/` are gitignored. The dashboard binds to 127.0.0.1, rejects foreign Host headers, requires a custom header on every write, and serves a strict CSP.
+- **Findings stay private.** `store/` and `output/` are gitignored. The local dashboard binds to 127.0.0.1 and rejects foreign Host headers. The internal host lets in only signed-in company accounts on the access list, and refuses everyone if sign-in is off. Both require a custom header on every write and serve a strict CSP. Server-side requests reach public addresses only, checked when connecting (`lib/netguard.mjs`).
 
 ## Layout
 
@@ -200,6 +224,9 @@ dashboard/                the local UI (no external scripts)
 n8n/                      generated workflows (optional scheduler)
 .claude/agents/           rfp-sweeper agent for Claude Code (no connector tools)
 store/  output/           ledger and workbooks (gitignored)
+Dockerfile                the internal host's image (Node + headless Chromium)
+infra/                    Azure Cloud Shell script that creates the internal host
+docs/                     internal hosting, sales platform (MCP), adding a tenant
 ```
 
 ## Published site (GitHub Pages)
@@ -216,7 +243,7 @@ way ps-intelligence is published:
 The site and the repo are **public**. They hold public procurement postings, role-based
 assignments and drafts built from the tenant profile. No customer data, no people's
 names, no links to internal tools: the build refuses to publish a ledger that links to one.
-For editing in a browser, use the local dashboard (`npm run dashboard`).
+For a team, use the internal host. For yourself, use the local dashboard (`npm run dashboard`).
 
 ## n8n (optional)
 

@@ -1,0 +1,132 @@
+# The internal host's container image (docs/internal-hosting.md).
+#
+# image:  on every push and pull request, build the image and check it the way App
+#         Service will run it: it starts, sends people to Microsoft sign-in, refuses
+#         everyone when sign-in is off, and its headless browser works.
+# deploy: optional. Once operations have created the host and set the repository
+#         variables AZURE_WEBAPP_NAME, AZURE_RESOURCE_GROUP and AZURE_CONTAINER_REGISTRY
+#         and the secrets AZURE_CLIENT_ID, AZURE_TENANT_ID and AZURE_SUBSCRIPTION_ID
+#         (a federated credential: no password is stored), each push to main builds
+#         the image in your registry and points the web app at it. Without them it is skipped.
+
+name: internal-host
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: internal-host-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Build the image
+        run: docker build --build-arg RFP_COMMIT=${{ github.sha }} -t rfp-sweep-drafter:ci .
+
+      # Sign-in headers are trusted here only because this test sends them itself, as App
+      # Service does after Microsoft sign-in. On App Service, WEBSITE_AUTH_ENABLED decides.
+      - name: Start it as the internal host
+        run: |
+          docker run -d --name rfp -p 127.0.0.1:8080:8080 \
+            -e RFP_AUTH_HEADERS=trust -e RFP_ADMINS=ci.admin@example.org -e RFP_DATA_DIR=/tmp/rfp-data \
+            rfp-sweep-drafter:ci
+          docker run -d --name rfp-nosignin -p 127.0.0.1:8081:8080 -e RFP_DATA_DIR=/tmp/rfp-data rfp-sweep-drafter:ci
+          for i in $(seq 1 60); do curl -fs http://127.0.0.1:8080/healthz && curl -fs http://127.0.0.1:8081/healthz && break; sleep 1; done
+
+      - name: Check sign-in, access and status
+        run: |
+          set -e
+          admin=$(node -e 'console.log(Buffer.from(JSON.stringify({auth_typ:"aad",claims:[{typ:"preferred_username",val:"ci.admin@example.org"}]})).toString("base64"))')
+          stranger=$(node -e 'console.log(Buffer.from(JSON.stringify({auth_typ:"aad",claims:[{typ:"preferred_username",val:"stranger@example.org"}]})).toString("base64"))')
+          code=$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' http://127.0.0.1:8080/)
+          echo "not signed in: $code"; echo "$code" | grep -q '^302 .*/\.auth/login/aad'
+          code=$(curl -s -o /dev/null -w '%{http_code}' -H "X-MS-CLIENT-PRINCIPAL: $stranger" http://127.0.0.1:8080/)
+          echo "not on the list: $code"; test "$code" = 403
+          curl -fs -H "X-MS-CLIENT-PRINCIPAL: $admin" http://127.0.0.1:8080/api/host > host.json
+          node -e '
+            const h = JSON.parse(require("fs").readFileSync("host.json", "utf8"));
+            const want = (c, m) => { if (!c) { console.error("FAIL:", m); process.exit(1); } };
+            want(h.mode === "internal" && h.user.admin === true, "the admin is not signed in as admin");
+            want(h.browser === true, "no headless browser in the image");
+            want(h.version.endsWith("(" + process.env.GITHUB_SHA.slice(0, 7) + ")"), "version does not carry the commit: " + h.version);
+            want(h.data.writable === true, "data folder not writable");
+            console.log("status ok:", h.version, h.checks.map((c) => (c.ok ? "ok " : "-- ") + c.id).join(", "));
+          '
+          code=$(curl -s -o /dev/null -w '%{http_code}' -H "X-MS-CLIENT-PRINCIPAL: $admin" http://127.0.0.1:8081/)
+          echo "sign-in off, forged admin header: $code"; test "$code" = 503
+
+      - name: Check the headless browser renders a public page, and the server refuses private addresses
+        run: |
+          docker exec rfp node --input-type=module -e '
+            const { renderPage, closeBrowser } = await import("/app/lib/browser.mjs");
+            const r = await renderPage("https://example.com/");
+            await closeBrowser();
+            if (!r.body || !/Example Domain/.test(r.body)) { console.error("browser:", r.error); process.exit(1); }
+            const { guardedFetch } = await import("/app/lib/netguard.mjs");
+            const refused = await guardedFetch("http://169.254.169.254/").then(() => false, (e) => /Blocked/.test(e.cause?.message ?? e.message));
+            if (!refused) { console.error("the metadata address was not refused"); process.exit(1); }
+            console.log("browser ok; private addresses refused");
+          '
+
+      - name: Logs
+        if: always()
+        run: docker logs rfp; docker logs rfp-nosignin
+
+  deploy:
+    needs: image
+    if: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.AZURE_WEBAPP_NAME != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    environment: internal-host
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      APP: ${{ vars.AZURE_WEBAPP_NAME }}
+      RG: ${{ vars.AZURE_RESOURCE_GROUP }}
+      ACR: ${{ vars.AZURE_CONTAINER_REGISTRY }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Build the image in your registry
+        run: |
+          tag="${GITHUB_SHA::7}"
+          az acr build --registry "$ACR" --image "rfp-sweep-drafter:$tag" --image rfp-sweep-drafter:latest --build-arg RFP_COMMIT="$GITHUB_SHA" .
+
+      - name: Point the web app at the new image
+        run: |
+          az webapp config container set --name "$APP" --resource-group "$RG" \
+            --container-image-name "$ACR.azurecr.io/rfp-sweep-drafter:${GITHUB_SHA::7}" \
+            --container-registry-url "https://$ACR.azurecr.io"
+
+      # The deploy fails if the app answers anyone without Microsoft sign-in.
+      - name: Check it is up and asks for sign-in
+        run: |
+          host=$(az webapp show --name "$APP" --resource-group "$RG" --query defaultHostName -o tsv)
+          for i in $(seq 1 40); do
+            out=$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' "https://$host/")
+            case "$out" in
+              302*"/.auth/login/aad"*|401*) echo "sign-in required: $out"; exit 0 ;;
+              200*) echo "The app answered without sign-in: turn on App Service authentication."; exit 1 ;;
+              503*) echo "App Service authentication is off, so the app refuses everyone: turn it on."; exit 1 ;;
+            esac
+            sleep 15
+          done
+          echo "The app did not come up: $out"; exit 1

@@ -357,6 +357,23 @@ pre.cmd { background: var(--bg); border: 1px solid var(--line); border-radius: 6
 .crm-value { white-space: pre-wrap; word-break: break-word; font-size: 12.5px; }
 button.linked { border-color: var(--pursue); color: var(--pursue); }
 .no-access { max-width: 640px; margin: 64px auto; }
+/* Internal host: who is signed in, and the Configuration page's status, schedule and activity */
+.signed-in { display: flex; gap: 10px; align-items: center; font-size: 12.5px; color: var(--muted); align-self: flex-end; padding-bottom: 6px; }
+.signed-in a { color: var(--accent); }
+#me[readonly] { background: var(--bg); color: var(--muted); }
+ul.checks { list-style: none; padding: 0; margin: 4px 0 8px; display: grid; gap: 4px; font-size: 13px; }
+ul.checks li { display: flex; gap: 8px; align-items: baseline; }
+.check-icon { display: inline-flex; justify-content: center; min-width: 18px; font-weight: 700; }
+ul.checks li.ok .check-icon { color: var(--pursue); }
+ul.checks li.warn .check-icon { color: var(--review); }
+ul.checks li.bad .check-icon { color: var(--danger); }
+ul.checks li.bad { color: var(--danger); }
+.access-table tr.locked td { color: var(--muted); }
+.schedule-row { gap: 8px; align-items: center; flex-wrap: wrap; }
+.schedule-row label.inline { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; }
+.settings-table code, .facts code { font-size: 12px; }
+.host-settings summary { cursor: pointer; color: var(--accent); font-size: 13px; margin: 6px 0; }
+ul.activity li { font-size: 13px; padding: 3px 0; border-bottom: 1px solid var(--line); }
 
 /* KPI numbers always fit their tile */
 .kpi { min-width: 0; }

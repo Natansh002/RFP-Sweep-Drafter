@@ -61,8 +61,15 @@ confirmation, and records are never deleted.
 Already created one by hand? Paste its id and link in the workspace's **Salesforce…**
 panel, in the local dashboard.
 
+## On the internal host
+
+The MCP server reads the ledger on the machine where it runs, so it works with a local
+copy of this repository. On the internal host, open an RFP and use its **Salesforce…**
+panel instead. It shows the fields to enter and records the record you created, for the
+whole team. Admins choose the platform on the host's Configuration page.
+
 ## Rules that do not change
 
 - The sweep never fetches sales-platform domains (`lib/guard.mjs`).
 - Jira, Confluence and the other internal tools stay off limits.
-- Links stay on your machine. The published copy has no sales-platform panel at all.
+- Links stay on your machine, or on the internal host behind company sign-in. The published copy has no sales-platform panel at all.

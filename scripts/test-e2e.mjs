@@ -124,6 +124,15 @@ const staticServer = http.createServer((req, res) => {
   fs.createReadStream(p).pipe(res);
 }).listen(4190, "127.0.0.1");
 const dash = spawn(process.execPath, [path.join(ROOT, "scripts", "dashboard.mjs")], { env: { ...env, PORT: "4191" }, stdio: "ignore" });
+// The internal host (RFP_MODE=internal) with its own copy of the data. The browser sends App
+// Service's sign-in headers, as App Service adds them after Microsoft sign-in; sweeps run dry.
+const TENANT = "11111111-2222-3333-4444-555555555555", ADMIN = "admin@example.org", PRESALES = "presales@example.org";
+const IDIR = path.join(TMP, "internal");
+fs.mkdirSync(path.join(IDIR, "store"), { recursive: true });
+for (const f of fs.readdirSync(STORE)) if (f.endsWith(".json")) fs.copyFileSync(path.join(STORE, f), path.join(IDIR, "store", f));
+fs.writeFileSync(path.join(IDIR, "store", "settings.json"), JSON.stringify({ schedule: { enabled: false, days: "weekdays", time: "06:00", timeZone: "America/Toronto", width: 2 } }));
+const hostDash = spawn(process.execPath, [path.join(ROOT, "scripts", "dashboard.mjs")], { env: { ...process.env, RFP_STORE_DIR: "", RFP_LIBRARY_DIR: "", RFP_OUTPUT_DIR: "", RFP_MODE: "internal", RFP_DATA_DIR: IDIR, RFP_BIND: "127.0.0.1", PORT: "4192", RFP_AUTH_HEADERS: "trust", RFP_ADMINS: ADMIN, RFP_TENANT_ID: TENANT, RFP_SWEEP_DRY: "1", RFP_SWEEP_DRY_MS: "2500", RFP_REQUEST_WAIT_MS: "600", RFP_SCHEDULER_TICK_MS: "86400000" }, stdio: "ignore" });
+const principal = (email) => Buffer.from(JSON.stringify({ auth_typ: "aad", claims: [{ typ: "preferred_username", val: email }, { typ: "http://schemas.microsoft.com/identity/claims/tenantid", val: TENANT }] })).toString("base64");
 await new Promise((r) => setTimeout(r, 1200));
 
 // ------------------------------------------------------------------ harness
@@ -144,8 +153,8 @@ async function check(name, fn) {
 }
 const expect = (cond, msg) => { if (!cond) throw new Error(msg); };
 
-async function openPage(url) {
-  const context = await browser.newContext({ acceptDownloads: true, viewport: { width: 1400, height: 900 } });
+async function openPage(url, { as = null } = {}) {
+  const context = await browser.newContext({ acceptDownloads: true, viewport: { width: 1400, height: 900 }, ...(as ? { extraHTTPHeaders: { "x-ms-client-principal": principal(as), "x-ms-client-principal-idp": "aad" } } : {}) });
   const page = await context.newPage();
   const errors = [];
   page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
@@ -630,7 +639,7 @@ async function suite(mode, url) {
     await check(P("Configuration on the published site: public copy, users are managed locally, no sales-platform panel"), async () => {
       await tab(page, "config"); await page.waitForTimeout(300);
       const t = await page.locator("#tab-config").textContent();
-      expect(/public copy/.test(t) && /local dashboard/.test(t), "no explanation");
+      expect(/public copy/.test(t) && /internal host/.test(t) && /docs\/internal-hosting\.md/.test(t), "no explanation");
       expect(await page.locator("#cfgEmail").count() === 0, "user editing shown on the published site");
       await tab(page, "sweep"); await openFirst();
       expect(await page.locator("#crmOpen").count() === 0, "sales-platform button on the published site");
@@ -706,22 +715,11 @@ async function suite(mode, url) {
       await page.locator("#aWorkspace button", { hasText: "Add to pipeline" }).click(); await page.waitForTimeout(700);
       await seenToast(page, /Added to the pipeline/);
     });
-    await check(P("configuration: a bad email is refused visibly; a user is added, saved and survives a reload; removal too"), async () => {
+    await check(P("configuration: the local copy explains how to host it for the team, with the app settings"), async () => {
       await tab(page, "config"); await page.waitForTimeout(400);
-      await page.fill("#cfgEmail", "not-an-email"); await page.click("#cfgAdd");
-      await seenToast(page, /added as RFP Manager/);
-      await page.click("#cfgSave");
-      await seenToast(page, /not an email address/);
-      await page.locator("#cfgAccess button", { hasText: "Remove" }).first().click();
-      await seenToast(page, /removed/);
-      await page.fill("#cfgEmail", "rfp.lead@example.org");
-      await page.locator("#cfgAccess .add-user select").selectOption("Account Executive");
-      await page.click("#cfgAdd"); await seenToast(page, /added as Account Executive/);
-      await page.click("#cfgSave"); await seenToast(page, /Access list saved: 1 user/);
-      const saved = JSON.parse(fs.readFileSync(path.join(STORE, "access.json"), "utf8"));
-      expect(saved.users.length === 1 && saved.users[0].email === "rfp.lead@example.org" && saved.users[0].role === "Account Executive" && !("name" in saved.users[0]), "not saved as email + role");
-      await page.reload(); await page.waitForSelector("#sRun"); await tab(page, "config"); await page.waitForTimeout(400);
-      expect(await page.locator('#cfgAccess tbody input[type="email"]').inputValue() === "rfp.lead@example.org", "user gone after reload");
+      const t = await page.locator("#tab-config").innerText();
+      expect(/only you can open it/.test(t) && /Host it for your team/.test(t) && /Azure App Service/.test(t) && /RFP_MODE/.test(t) && /RFP_ADMINS/.test(t) && /docs\/internal-hosting\.md/.test(t), "no hosting explanation");
+      expect(await page.locator("#cfgEmail").count() === 0, "the local copy shows an access list (it belongs to the internal host)");
     });
     await check(P("configuration: the sales platform choice is saved"), async () => {
       await page.selectOption("#cfgPlatform", "hubspot"); await seenToast(page, /Sales platform: HubSpot/);
@@ -928,13 +926,123 @@ Built on Microsoft Dynamics 365 Business Central with Power BI reporting.`;
   await context.close();
 }
 
+// ------------------------------------------------------------------ the internal host
+async function hostSuite(url) {
+  const P = (n) => `[internal host] ${n}`;
+  const bare = await browser.newContext();
+  const anon = await bare.newPage();
+  await check(P("not signed in: sent to Microsoft sign-in"), async () => {
+    const r = await anon.request.get(url, { maxRedirects: 0 });
+    expect(r.status() === 302 && r.headers().location === "/.auth/login/aad?post_login_redirect_uri=%2F", `status ${r.status()} → ${r.headers().location}`);
+  });
+  await bare.close();
+
+  const stranger = await browser.newContext({ extraHTTPHeaders: { "x-ms-client-principal": principal("stranger@example.org"), "x-ms-client-principal-idp": "aad" } });
+  await check(P("signed in but not on the list: a no-access page with the account and a sign-out link, and no data"), async () => {
+    const pg = await stranger.newPage();
+    const r = await pg.goto(url);
+    const t = await pg.locator("body").innerText();
+    expect(r.status() === 403 && /not on the access list/.test(t) && /stranger@example\.org/.test(t) && (await pg.locator('a[href^="/.auth/logout"]').count()) === 1, `status ${r.status()}: ${t.slice(0, 120)}`);
+    expect(!/Enterprise Resource Planning/.test(t) && (await pg.locator("#sRun").count()) === 0, "data shown to someone not on the list");
+  });
+  await stranger.close();
+
+  const { page, errors, context } = await openPage(url, { as: ADMIN });
+  currentPage = page;
+  page.on("dialog", (d) => d.accept());
+  await check(P("admin: the dashboard opens, signed in, with the role from the access list"), async () => {
+    expect((await page.locator("#flowSteps li").count()) === 7, "dashboard not shown");
+    expect(/Signed in as admin@example\.org/.test(await page.locator("#signedIn").innerText()) && (await page.locator('#signedIn a[href^="/.auth/logout"]').count()) === 1, "no signed-in line with Sign out");
+    expect((await page.inputValue("#me")) === "RFP Manager" && (await page.locator("#me").getAttribute("readonly")) !== null, "role not from the access list");
+  });
+  await check(P("admin: This host shows mode, account, sign-in, data and version, with checks"), async () => {
+    await tab(page, "config"); await page.waitForSelector("#cfgHost .checks li");
+    const t = await page.locator("#cfgHost").innerText();
+    expect(/Internal host, shared by your team/.test(t) && /admin@example\.org, RFP Manager, admin/.test(t) && /sign-in proxy/.test(t) && /\d+\.\d+\.\d+/.test(t), `host card: ${t.slice(0, 200)}`);
+    expect(await page.locator('#cfgHost li.ok[data-check="signin"]').count() === 1 && await page.locator('#cfgHost li.warn[data-check="schedule"]').count() === 1, "checks missing");
+  });
+  await check(P("admin: a bad email is refused visibly; a person is added with a role, saved, and still there after a reload"), async () => {
+    await page.fill("#cfgEmail", "not-an-email"); await page.click("#cfgAdd");
+    await seenToast(page, /added as RFP Manager/);
+    await page.click("#cfgSave"); await seenToast(page, /not an email address/);
+    await page.locator("#cfgAccess button", { hasText: "Remove" }).first().click(); await seenToast(page, /removed/);
+    expect(/admin@example\.org[\s\S]*RFP_ADMINS/.test(await page.locator("#cfgAccess tr.locked").innerText()), "the RFP_ADMINS admin is not shown as fixed");
+    await page.fill("#cfgEmail", PRESALES);
+    await page.locator("#cfgAccess .add-user select").selectOption("Pre-sales Consultant");
+    await page.click("#cfgAdd"); await seenToast(page, /added as Pre-sales Consultant/);
+    await page.click("#cfgSave"); await seenToast(page, /Access list saved: 1 user\(s\)\. Changes take effect at once/);
+    const saved = JSON.parse(fs.readFileSync(path.join(IDIR, "store", "access.json"), "utf8"));
+    expect(saved.users.length === 1 && saved.users[0].email === PRESALES && saved.users[0].role === "Pre-sales Consultant" && !("name" in saved.users[0]), "not saved as email + role");
+    await page.reload(); await page.waitForSelector("#sRun"); await tab(page, "config"); await page.waitForSelector("#cfgAccess tbody input[type=email]");
+    expect(await page.locator('#cfgAccess tbody input[type="email"]').inputValue() === PRESALES, "person gone after reload");
+  });
+  await check(P("admin: the schedule is saved and the next run shown"), async () => {
+    await page.check("#cfgSchedOn");
+    await page.selectOption("#cfgSchedDays", "daily");
+    await page.fill("#cfgSchedTime", "07:15");
+    await page.selectOption("#cfgSchedZone", "America/Vancouver");
+    await page.click("#cfgSchedSave");
+    await seenToast(page, /Schedule saved: Every day at 07:15 \(America\/Vancouver\)\. Next: /);
+    await page.waitForTimeout(300);
+    expect(/Every day at 07:15 \(America\/Vancouver\)\. Next: /.test(await page.locator("#cfgScheduleText").innerText()), "schedule text not updated");
+  });
+  await check(P("admin: Run now starts a sweep on the host; it shows as running, then in Recent sweeps"), async () => {
+    await page.click("#cfgRunNow");
+    await seenToast(page, /Sweep started on the host/);
+    await page.waitForSelector("#cfgRunning");
+    for (let i = 0; i < 40 && !(await page.locator("#cfgSchedule .runs-table tbody tr").count()); i++) { await page.waitForTimeout(250); await tab(page, "sweep"); await tab(page, "config"); }
+    expect(/an admin/.test(await page.locator("#cfgSchedule .runs-table tbody tr").first().innerText()), "the run is not listed");
+  });
+  await check(P("admin: the activity log lists the changes, and a backup downloads"), async () => {
+    const t = await page.locator("#cfgActivity").innerText();
+    expect(/admin@example\.org: Access list: added presales@example\.org/.test(t) && /Sweep schedule: Every day at 07:15/.test(t) && /Started a sweep/.test(t), `activity: ${t.slice(0, 300)}`);
+    const z = await download(page, () => page.click("#cfgBackup"));
+    expect(fs.readFileSync(z).subarray(0, 2).toString() === "PK" && /rfp-sweep-backup-\d{4}-\d{2}-\d{2}\.zip$/.test(z), "no backup zip");
+  });
+  await check(P("a sweep longer than the request keeps going on the host, and the page follows it to the end"), async () => {
+    await tab(page, "sweep");
+    for (const [id, v] of Object.entries({ sIndustry: "", sGeo: "na", sCap: "", sDays: "any", sStatus: "active" })) await page.selectOption(`#${id}`, v);
+    await page.click("#sRun");
+    await page.waitForFunction(() => /Sweeping… \d+ s/.test(document.querySelector("#sRun")?.textContent ?? ""), null, { timeout: 8000 });
+    await page.waitForFunction(() => !/Sweeping/.test(document.querySelector("#sRun")?.textContent ?? ""), null, { timeout: 15000 });
+    expect(!(await page.locator("#toast.error.show").count()), `error: ${await toastText(page)}`);
+  });
+  await check(P("no stray \"null\" or \"undefined\" on the internal host's screens"), async () => {
+    for (const t of ["sweep", "findings", "actions", "config"]) {
+      await tab(page, t); await page.waitForTimeout(200);
+      const text = await page.locator("body").innerText();
+      const stray = text.match(/\bundefined\b|\bNaN\b|\[object \w+\]|(^|[\s(])null(?=[\s),.]|$)/);
+      expect(!stray, `${t} shows "${stray?.[0]?.trim()}"`);
+    }
+  });
+  await check(P("admin: no page or console errors"), async () => expect(errors.length === 0, errors.slice(0, 3).join(" · ")));
+  await context.close();
+
+  const pre = await openPage(url, { as: PRESALES });
+  currentPage = pre.page;
+  await check(P("a Pre-sales Consultant works on the shared pipeline but cannot change the configuration"), async () => {
+    const pg = pre.page;
+    expect((await pg.inputValue("#me")) === "Pre-sales Consultant", "role not applied");
+    await tab(pg, "config"); await pg.waitForSelector("#cfgAccess");
+    const t = await pg.locator("#tab-config").innerText();
+    expect(/You have access as Pre-sales Consultant/.test(t) && /Only an admin can change the schedule/.test(t), `config for a non-admin: ${t.slice(0, 200)}`);
+    expect(await pg.locator("#cfgEmail").count() === 0 && await pg.locator("#cfgSchedSave").count() === 0 && await pg.locator("#cfgActivity").count() === 0 && await pg.locator("#cfgPlatform").isDisabled(), "admin controls shown to a non-admin");
+    const r = await pg.request.put(`${url}api/access`, { headers: { "x-rfp-dashboard": "1", "content-type": "application/json" }, data: { users: [{ email: PRESALES, role: "RFP Manager", admin: true }] } });
+    expect(r.status() === 403, `a non-admin changed the list: ${r.status()}`);
+  });
+  await check(P("Pre-sales Consultant: no page or console errors"), async () => expect(pre.errors.length === 0, pre.errors.slice(0, 3).join(" · ")));
+  await pre.context.close();
+}
+
 try {
   await suite("published site", "http://127.0.0.1:4190/");
   await suite("local dashboard", "http://127.0.0.1:4191/");
+  await hostSuite("http://127.0.0.1:4192/");
 } finally {
   await browser.close();
   staticServer.close();
   dash.kill();
+  hostDash.kill();
   fs.rmSync(path.join(ROOT, "site"), { recursive: true, force: true });
 }
 

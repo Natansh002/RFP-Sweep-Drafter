@@ -1,0 +1,19 @@
+# Only what the internal host runs goes into the image: no data, no secrets, no tests.
+.git
+.github
+.claude
+.mcp.json
+.env*
+node_modules
+store
+output
+site
+dist
+library/private
+assignments
+n8n
+scripts/test-*.mjs
+scripts/fixtures
+*.log
+*.tmp
+.DS_Store

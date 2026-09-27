@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 /**
- * Tests for configuration: the private host's access list and roles, the
- * sales-platform opportunity fields, and the MCP server (spoken to over stdio,
- * as Claude would). Uses a temporary store; nothing real is touched.
+ * Tests for configuration: the internal host's access list and what it lets people do,
+ * the sales-platform opportunity fields, and the MCP server (spoken to over stdio, as
+ * Claude would). Uses a temporary store; nothing real is touched. The host itself
+ * (sign-in, the schedule, the server's answers) is tested in test-hosting.mjs.
  */
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
-import { createRequire } from "node:module";
-import { validateAccess, rolesFor, hostConfig, ACCESS_ROLES } from "../lib/access.mjs";
+import { validateAccess, accessFor, accessChanges, ACCESS_ROLES } from "../lib/access.mjs";
 import { crmPayload, validCrmLink, CRM_PLATFORMS } from "../lib/crm.mjs";
 import { saveLedger, writeStore, readStore } from "../lib/ledger.mjs";
 import { ROOT } from "../lib/config.mjs";
@@ -17,7 +17,6 @@ import { findBlocked } from "../lib/guard.mjs";
 
 let fails = 0, passes = 0;
 const a = (name, cond) => { if (cond) passes++; else { fails++; console.log(`FAIL: ${name}`); } };
-const require = createRequire(import.meta.url);
 
 // ---- the access list: work email + one of the four roles, nothing else
 const v = validateAccess([
@@ -31,28 +30,15 @@ a("access: emails normalised, roles matched case-insensitively", v.users[0].emai
 a("access: bad email, unknown role and duplicate each reported", v.errors.length === 3 && /not an email/.test(v.errors[0]) && /four roles/.test(v.errors[1]) && /twice/.test(v.errors[2]));
 a("access: only email, role and admin are kept (no names)", Object.keys(v.users[1]).sort().join() === "admin,email,role");
 a("access: the four roles", ACCESS_ROLES.join("|") === "RFP Manager|Pre-sales Consultant|Account Executive|SME Contributor");
-a("roles: a listed email gets rfp_user and its role", rolesFor(v.users, "ANA@example.org").join() === "rfp_user,rfp_account_executive");
-a("roles: admin flag adds rfp_admin", rolesFor(v.users, "sam@example.org").includes("rfp_admin"));
-a("roles: anyone else gets nothing", rolesFor(v.users, "stranger@example.org").length === 0);
-
-// the host's copy (api/roles) answers exactly like lib/access.mjs
-const fn = require("../api/roles/index.js");
-process.env.RFP_ACCESS = JSON.stringify(v.users);
-const ask = async (body, headers = {}) => { const ctx = {}; await fn(ctx, { body, headers }); return ctx.res.body.roles; };
-a("api/roles: same roles as lib/access.mjs", (await ask({ identityProvider: "aad", userDetails: "ana@example.org" })).join() === rolesFor(v.users, "ana@example.org").join());
-a("api/roles: only Microsoft sign-in counts", (await ask({ identityProvider: "github", userDetails: "ana@example.org" })).length === 0);
-a("api/roles: email from claims when userDetails is empty", (await ask({ identityProvider: "aad", claims: [{ typ: "preferred_username", val: "sam@example.org" }] })).includes("rfp_user"));
-const principal = (email) => Buffer.from(JSON.stringify({ userDetails: email })).toString("base64");
-a("api/roles: a signed-in person cannot ask about someone else", (await ask({ identityProvider: "aad", userDetails: "ana@example.org" }, { "x-ms-client-principal": principal("mallory@example.org") })).length === 0);
-a("api/roles: a broken access setting gives no roles, not an error", await (async () => { process.env.RFP_ACCESS = "{not json"; const r = await ask({ identityProvider: "aad", userDetails: "ana@example.org" }); process.env.RFP_ACCESS = JSON.stringify(v.users); return r.length === 0; })());
-
-// the private host's route rules
-const cfg = hostConfig({ tenantId: "00000000-0000-0000-0000-000000000000" });
-a("host: every page needs rfp_user", cfg.routes.at(-1).route === "/*" && cfg.routes.at(-1).allowedRoles.join() === "rfp_user");
-a("host: roles come from api/roles, sign-in is the company tenant", cfg.auth.rolesSource === "/api/roles" && /00000000-0000-0000-0000-000000000000\/v2\.0$/.test(cfg.auth.identityProviders.azureActiveDirectory.registration.openIdIssuer));
-a("host: other sign-in providers are switched off", cfg.routes.some((r) => r.route === "/.auth/login/github" && r.statusCode === 404));
-a("host: not signed in → Microsoft sign-in; not on the list → no-access page", cfg.responseOverrides["401"].redirect.startsWith("/.auth/login/aad") && cfg.responseOverrides["403"].rewrite === "/no-access.html");
-a("host: secrets are setting names, never values", JSON.stringify(cfg).includes("AAD_CLIENT_SECRET") && !/secret"\s*:\s*"[^A]/i.test(JSON.stringify(cfg)));
+// what the list lets a signed-in email do
+a("access: a listed email gets its role", JSON.stringify(accessFor({ users: v.users, email: "ANA@example.org" })) === JSON.stringify({ email: "ana@example.org", role: "Account Executive", admin: false, source: "list" }));
+a("access: the admin flag makes an admin", accessFor({ users: v.users, email: "sam@example.org" }).admin === true);
+a("access: anyone else gets nothing", accessFor({ users: v.users, email: "stranger@example.org" }) === null && accessFor({ users: v.users, email: "" }) === null && accessFor({ users: v.users, email: "not an email" }) === null);
+a("access: RFP_ADMINS always get in, as admin and RFP Manager", JSON.stringify(accessFor({ users: [], admins: ["boss@example.org"], email: "Boss@Example.org" })) === JSON.stringify({ email: "boss@example.org", role: "RFP Manager", admin: true, source: "RFP_ADMINS" }));
+a("access: a listed RFP_ADMINS email keeps its listed role and is an admin", (() => { const x = accessFor({ users: v.users, admins: ["ana@example.org"], email: "ana@example.org" }); return x.role === "Account Executive" && x.admin && x.source === "list and RFP_ADMINS"; })());
+const ch = accessChanges([{ email: "a@x.org", role: "RFP Manager", admin: true }, { email: "b@x.org", role: "SME Contributor", admin: false }], [{ email: "a@x.org", role: "Account Executive", admin: false }, { email: "c@x.org", role: "Pre-sales Consultant", admin: false }]);
+a("access: changes described for the activity log", ch.join(" | ") === "a@x.org: RFP Manager → Account Executive | a@x.org: no longer an admin | added c@x.org (Pre-sales Consultant) | removed b@x.org");
+a("access: no change, nothing logged", accessChanges(v.users, v.users).length === 0);
 
 // ---- sales-platform fields
 const F = { id: "all-abc123", title: "Enterprise Resource Planning System", buyer: "Example Housing Corporation", closeDate: "2026-10-16", status: "Pursuing", url: "https://kyhousing.bonfirehub.com/opportunities/1", estimatedValue: null,

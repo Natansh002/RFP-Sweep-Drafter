@@ -1,6 +1,6 @@
 // RFP Sweep and Drafter dashboard. Vanilla JS, no external requests: everything goes to
-// this dashboard's own /api on 127.0.0.1. All text from findings is rendered as
-// text, never as HTML.
+// this dashboard's own /api (127.0.0.1 on the local copy, or the internal host behind
+// company sign-in). All text from findings is rendered as text, never as HTML.
 "use strict";
 
 const $ = (s, el = document) => el.querySelector(s);
@@ -198,7 +198,7 @@ async function loadMeta() {
   state.tenant = state.meta.tenants.some((t) => t.id === saved) ? saved : state.meta.tenants[0]?.id;
   sel.value = state.tenant;
   $("#me").value = store.get("rfp.me", "");
-  await loadPrincipal();
+  await loadHost();
   loadLibrary();
   const fs = $("#fStatus");
   for (const s of state.meta.statuses) fs.append(h("option", { value: s }, s));
@@ -516,12 +516,30 @@ function renderPipelineHeader() {
 $("#selAllFindings").addEventListener("change", (e) => { for (const b of document.querySelectorAll("#findings .sel-finding")) { b.checked = e.target.checked; } for (const f of filtered()) e.target.checked ? state.sel.findings.add(f.id) : state.sel.findings.delete(f.id); renderBulk(); });
 $("#selAllActions").addEventListener("change", (e) => { for (const b of document.querySelectorAll("#actions .sel-action")) { b.checked = e.target.checked; b.dispatchEvent(new Event("change")); } });
 
+/**
+ * A sweep that outlasts the internal host's request time answers 202 with a job: it keeps
+ * running on the host, and this follows it to the end.
+ */
+async function waitForJob(job, onTick) {
+  const started = Date.now();
+  for (;;) {
+    await new Promise((r) => setTimeout(r, Date.now() - started < 20000 ? 1000 : 4000));
+    const r = await fetch(`/api/jobs/${encodeURIComponent(job.id)}`, { cache: "no-store" });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || r.statusText);
+    if (j.status === "done") return j.result;
+    if (j.status === "failed") throw new Error(j.error || "The sweep failed.");
+    onTick?.(Math.round((Date.now() - started) / 1000));
+  }
+}
+
 $("#runSweep").addEventListener("click", async (e) => {
   const btn = e.currentTarget;
   btn.disabled = true;
   btn.textContent = "Sweeping…";
   try {
-    const r = await api("POST", "/api/sweep", { industry: $("#sweepIndustry").value || null, width: Number($("#sweepWidth").value), direct: $("#sweepDirect").checked });
+    let r = await api("POST", "/api/sweep", { industry: $("#sweepIndustry").value || null, width: Number($("#sweepWidth").value), direct: $("#sweepDirect").checked });
+    if (r.job && !r.summary) r = await waitForJob(r.job, (sec) => { btn.textContent = `Sweeping… ${sec} s`; });
     toast(r.summary.map((s) => `${s.industry}: ${s.halted ? `HALTED — ${s.haltReason}` : `${s.added} new, ${s.refreshed} refreshed, ${s.gaps} gap(s)`}`).join("\n"));
   } catch (err) { toast(err.message, true); }
   btn.disabled = false;
@@ -851,7 +869,8 @@ async function runSearch() {
     // Map the chosen buyer industry to the search pack: K-12 and nonprofit have their own; the rest search capability-led.
     const [kind, id] = (p.industry || "").split(":");
     const pack = kind === "pack" ? id : kind === "sector" ? state.meta.sectors.find((x) => x.id === id)?.pack : "";
-    const r = await fetch("/api/search?tenant=all", { method: "POST", headers: { "X-RFP-Dashboard": "1", "content-type": "application/json" }, body: JSON.stringify({ ...p, industry: pack || "", days, profileTerms: state.profile ? R().profileSearch(state.profile) : null }) }).then(async (x) => { const j = await x.json(); if (!x.ok) throw new Error(j.error); return j; });
+    let r = await fetch("/api/search?tenant=all", { method: "POST", headers: { "X-RFP-Dashboard": "1", "content-type": "application/json" }, body: JSON.stringify({ ...p, industry: pack || "", days, profileTerms: state.profile ? R().profileSearch(state.profile) : null }) }).then(async (x) => { const j = await x.json(); if (!x.ok) throw new Error(j.error); return j; });
+    if (r.job && !r.ids) r = await waitForJob(r.job, (sec) => { btn.textContent = `Sweeping… ${sec} s`; });
     state.allLedger = await fetchLedgerFor(GENERAL);
     if (state.profile) { state.postings = null; await loadPostings(); }
     // Keep only what matches the chosen buyer industry.
@@ -1639,44 +1658,125 @@ async function exportRfpResponses(tid, chosen) {
 }
 
 // =================================================================== Configuration
-// Who can open the private host (work email + one of the four roles, no names), and
-// the sales-platform link through MCP. Edited in the local dashboard; both files stay
-// on this machine (store/access.json, store/crm.json) and are never published.
+// The internal host: who can open it (work email + one of the four roles, no names),
+// the sweep schedule, the sales-platform link, activity and backups; admins change them.
+// The local copy: how to host it for a team. The public copy: where the team version lives.
 
-const ROLE_BY_SLUG = { rfp_rfp_manager: "RFP Manager", rfp_pre_sales_consultant: "Pre-sales Consultant", rfp_account_executive: "Account Executive", rfp_sme_contributor: "SME Contributor" };
-
-/** On the private host, who is signed in (Microsoft sign-in) and their role from the access list. */
-async function loadPrincipal() {
-  if (!STATIC) return;
+/** On the internal host: who is signed in, their role from the access list, and the host's status. */
+async function loadHost() {
+  if (STATIC) return;
   try {
-    const r = await fetch("/.auth/me", { cache: "no-store" });
-    if (!r.ok || !(r.headers.get("content-type") ?? "").includes("json")) return;
-    const p = (await r.json())?.clientPrincipal;
-    if (!p) return;
-    const role = (p.userRoles ?? []).map((x) => ROLE_BY_SLUG[x]).find(Boolean) ?? null;
-    state.principal = { email: p.userDetails, role };
-    if (role && !$("#me").value) $("#me").value = role;
-  } catch { /* the public copy has no sign-in */ }
+    const r = await fetch("/api/host", { cache: "no-store" });
+    if (!r.ok) return;
+    state.host = await r.json();
+  } catch { return; }
+  const u = state.host?.mode === "internal" ? state.host.user : null;
+  if (!u) return;
+  const me = $("#me");
+  me.value = u.role;
+  me.readOnly = true;
+  me.title = "Your role, from the access list";
+  $("#signedIn")?.remove();
+  $(".top .controls").append(h("span", { class: "signed-in", id: "signedIn" }, h("span", {}, `Signed in as ${u.email}`), h("a", { href: state.host.signOut }, "Sign out")));
 }
+
+const cfgWrite = async (method, url, body) => {
+  const r = await fetch(url, { method, headers: { "X-RFP-Dashboard": "1", ...(body ? { "content-type": "application/json" } : {}) }, body: body ? JSON.stringify(body) : undefined });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+};
+const utc = (iso) => (iso ? `${iso.slice(0, 16).replace("T", " ")} UTC` : "");
 
 async function renderConfig() {
   const box = $("#configBody");
   if (!box) return;
   if (STATIC) {
-    const who = state.principal;
     return box.replaceChildren(h("section", { class: "card config-card" },
       h("h2", {}, "Configuration"),
-      who ? h("p", {}, `Signed in as ${who.email}${who.role ? `, ${who.role}` : ""}. `, h("a", { href: "/.auth/logout" }, "Sign out")) : h("p", {}, "This is the public copy: it has no sign-in and shows only public procurement data."),
-      h("p", {}, "Users, their roles and the sales-platform link are managed by an admin in the local dashboard (npm run dashboard → Configuration). The private host, with company sign-in, lets in only the work emails on that list."),
-      h("p", { class: "hint" }, "Set-up steps: docs/private-hosting.md and docs/sales-platform-mcp.md in the repository.")));
+      h("p", {}, "This is the public copy: it has no sign-in and shows only public procurement data."),
+      h("p", {}, "The team version runs on your internal host, behind company (Microsoft) sign-in. Its Configuration page manages who can open it (work email and one of the four roles), the sweep schedule and the sales-platform link."),
+      h("p", { class: "hint" }, "Set-up steps: docs/internal-hosting.md and docs/sales-platform-mcp.md in the repository.")));
   }
   if (!box.firstChild) box.replaceChildren(h("p", { class: "hint" }, "Loading the configuration…"));
-  let access, crm;
-  try { [access, crm] = await Promise.all([fetch("/api/access").then((r) => r.json()), fetch("/api/crm").then((r) => r.json())]); }
+  let host, crm;
+  try { [host, crm] = await Promise.all([fetch("/api/host", { cache: "no-store" }).then((r) => r.json()), fetch("/api/crm").then((r) => r.json())]); }
   catch (e) { return box.replaceChildren(h("p", { class: "empty" }, `Could not load the configuration: ${e.message}`)); }
+  state.host = { ...(state.host ?? {}), ...host };
   state.crm = crm;
+  const internal = host.mode === "internal";
+  const cards = internal ? await internalCards(host) : localCards(host);
+  box.replaceChildren(...cards, salesPlatformCard(crm, host));
+}
+
+function localCards(host) {
+  const setting = (name, value, note) => h("tr", {}, h("td", {}, h("code", {}, name)), h("td", {}, h("code", {}, value)), h("td", { class: "hint" }, note));
+  return [
+    h("section", { class: "card config-card", id: "cfgHost" },
+      h("h2", {}, "This copy"),
+      h("p", {}, "The local copy on this computer (127.0.0.1): only you can open it, and nothing here is published."),
+      h("table", { class: "facts" }, h("tbody", {},
+        h("tr", {}, h("th", {}, "Version"), h("td", {}, host.version)),
+        h("tr", {}, h("th", {}, "Data folder"), h("td", {}, host.data?.dir ?? ""))))),
+    h("section", { class: "card config-card", id: "cfgHosting" },
+      h("h2", {}, "Host it for your team"),
+      h("p", {}, "The team version runs on your company's Azure App Service, behind Microsoft sign-in. Everyone shares one pipeline, and admins manage the access list and the sweep schedule on its Configuration page. Your operations team sets it up once."),
+      h("ol", { class: "steps" },
+        h("li", {}, "Build the container image from this repository (its Dockerfile) into your Azure Container Registry."),
+        h("li", {}, "Create a Linux Web App for Containers from it: one instance, Always On, health check /healthz, with the app settings below."),
+        h("li", {}, "Turn on App Service authentication with Microsoft Entra: your tenant only, sign-in required."),
+        h("li", {}, "The admins named in RFP_ADMINS sign in and add everyone else on the Configuration page."),
+        h("li", {}, "When it works, set the GitHub variable PUBLISH_PAGES to false to stop the public copy.")),
+      h("div", { class: "tablewrap" }, h("table", { class: "grid settings-table" },
+        h("thead", {}, h("tr", {}, h("th", {}, "App setting"), h("th", {}, "Value"), h("th", {}, "What it does"))),
+        h("tbody", {},
+          setting("RFP_MODE", "internal", "sign-in, the access list and the schedule"),
+          setting("RFP_ADMINS", "first.admin@yourcompany.com", "the first admins; they add everyone else"),
+          setting("RFP_TENANT_ID", "your Entra tenant ID", "only accounts from your tenant get in"),
+          setting("RFP_DATA_DIR", "/home/data/rfp-sweep", "findings, users, settings and the library"),
+          setting("WEBSITES_ENABLE_APP_SERVICE_STORAGE", "true", "keeps /home when the container restarts"),
+          setting("WEBSITES_PORT", "8080", "the port the container listens on")))),
+      h("p", { class: "hint" }, "Full steps and a script for Azure Cloud Shell: docs/internal-hosting.md and infra/azure-internal-host.sh. Creating Azure and Entra resources needs your company's accounts, so this tool never does it for you.")),
+  ];
+}
+
+async function internalCards(host) {
+  const admin = !!host.user?.admin;
+  const [access, settings, audit] = await Promise.all([
+    fetch("/api/access").then((r) => r.json()),
+    fetch("/api/settings").then((r) => r.json()),
+    admin ? fetch("/api/audit").then((r) => r.json()) : Promise.resolve(null),
+  ]);
+  return [hostCard(host), accessCard(access, admin), scheduleCard(settings, host, admin), ...(admin ? [activityCard(audit)] : [])];
+}
+
+function hostCard(host) {
+  const icon = (c) => (c.ok ? "✓" : c.warn ? "!" : "✗");
+  return h("section", { class: "card config-card", id: "cfgHost" },
+    h("h2", {}, "This host"),
+    h("table", { class: "facts" }, h("tbody", {},
+      h("tr", {}, h("th", {}, "Mode"), h("td", {}, "Internal host, shared by your team")),
+      h("tr", {}, h("th", {}, "You"), h("td", {}, `${host.user.email}, ${host.user.role}${host.user.admin ? ", admin" : ""}. `, h("a", { href: host.signOut }, "Sign out"))),
+      h("tr", {}, h("th", {}, "Sign-in"), h("td", {}, host.signIn?.on ? host.signIn.how : "off")),
+      h("tr", {}, h("th", {}, "Data"), h("td", {}, host.data?.dir ?? "")),
+      h("tr", {}, h("th", {}, "Version"), h("td", {}, host.version)))),
+    h("h4", {}, "Checks"),
+    h("ul", { class: "checks" }, ...(host.checks ?? []).map((c) => h("li", { class: c.ok ? "ok" : c.warn ? "warn" : "bad", "data-check": c.id }, h("span", { class: "check-icon", "aria-hidden": "true" }, icon(c)), h("span", {}, c.label)))),
+    host.settings?.length ? h("details", { class: "host-settings" }, h("summary", {}, "App settings this host reads"),
+      h("div", { class: "tablewrap" }, h("table", { class: "grid settings-table" }, h("thead", {}, h("tr", {}, h("th", {}, "Setting"), h("th", {}, "Value"), h("th", {}, "What it does"))),
+        h("tbody", {}, ...host.settings.map((s) => h("tr", {}, h("td", {}, h("code", {}, s.name)), h("td", {}, s.value ?? h("span", { class: "hint" }, "not set")), h("td", { class: "hint" }, s.note))))))) : null);
+}
+
+function accessCard(access, admin) {
+  if (!admin) {
+    return h("section", { class: "card config-card", id: "cfgAccess" },
+      h("h2", {}, "Users and access"),
+      h("p", {}, `You have access as ${access.you?.role ?? "a user"}. ${access.count} ${access.count === 1 ? "person is" : "people are"} on the access list.`),
+      h("p", { class: "hint" }, "Only an admin can add or remove people, or change roles. Ask an admin."));
+  }
   if (!state.accessDraft) state.accessDraft = access.users.map((u) => ({ ...u }));
   const draft = state.accessDraft, roles = access.roles;
+  const fixed = (access.admins ?? []).filter((e) => !draft.some((u) => u.email === e));
   const roleSelect = (value, onchange, label) => h("select", { class: "keep", "aria-label": label, onchange: (e) => onchange(e.target.value) }, ...roles.map((r) => h("option", { value: r, selected: r === value }, r)));
   const newEmail = h("input", { type: "email", id: "cfgEmail", placeholder: "work email", "aria-label": "Work email", autocomplete: "off" });
   let newRole = roles[0];
@@ -1690,56 +1790,116 @@ async function renderConfig() {
   newEmail.addEventListener("keydown", (e) => { if (e.key === "Enter") addUser(); });
   const saveAccess = async () => {
     try {
-      const r = await fetch("/api/access", { method: "PUT", headers: { "X-RFP-Dashboard": "1", "content-type": "application/json" }, body: JSON.stringify({ users: draft }) });
-      const j = await r.json();
-      if (!r.ok) throw new Error(j.error);
+      const j = await cfgWrite("PUT", "/api/access", { users: draft });
       state.accessDraft = j.users.map((u) => ({ ...u }));
       renderConfig();
-      toast(`Access list saved: ${j.users.length} user(s). Apply it to the private host with npm run access:apply.`);
+      toast(`Access list saved: ${j.users.length} user(s). ${j.changes?.length ? "Changes take effect at once." : "No changes."}`);
     } catch (e) { toast(e.message, true); }
   };
-  const platform = crm.platform ?? "salesforce", pname = R().CRM_NAMES[platform];
-  const links = Object.entries(crm.links ?? {});
-  const titleOf = (id) => state.allLedger?.findings.find((f) => f.id === id)?.title ?? id;
-  box.replaceChildren(
-    h("section", { class: "card config-card", id: "cfgAccess" },
-      h("h2", {}, "Users and access"),
-      h("p", { class: "hint" }, "Who can open the dashboard on the private host, with company (Microsoft) sign-in. Work email and one of the four roles only, no names. Saved in store/access.json on this machine: not in git, never published."),
-      h("div", { class: "tablewrap" }, h("table", { class: "grid access-table" },
-        h("thead", {}, h("tr", {}, ...["Work email", "Role", "Admin", ""].map((x) => h("th", {}, x)))),
-        h("tbody", {}, ...(draft.length ? draft.map((u, i) => h("tr", {},
+  return h("section", { class: "card config-card", id: "cfgAccess" },
+    h("h2", {}, "Users and access"),
+    h("p", { class: "hint" }, "Company accounts on this list can open the dashboard, with one of the four roles. Admins can also change this page. Work email and role only, no names. Changes take effect on the next click."),
+    h("div", { class: "tablewrap" }, h("table", { class: "grid access-table" },
+      h("thead", {}, h("tr", {}, ...["Work email", "Role", "Admin", ""].map((x) => h("th", {}, x)))),
+      h("tbody", {},
+        ...fixed.map((e) => h("tr", { class: "locked" }, h("td", {}, e), h("td", {}, "RFP Manager"), h("td", {}, "Yes"), h("td", { class: "hint" }, "from the RFP_ADMINS app setting"))),
+        ...(draft.length ? draft.map((u, i) => h("tr", {},
           h("td", {}, (() => { const inp = h("input", { type: "email", class: "keep", value: u.email, "aria-label": "Work email" }); inp.addEventListener("change", () => { u.email = inp.value.trim(); }); return inp; })()),
           h("td", {}, roleSelect(u.role, (v) => { u.role = v; }, "Role")),
           h("td", {}, h("input", { type: "checkbox", class: "keep", checked: !!u.admin, "aria-label": "Admin", onchange: (e) => { u.admin = e.target.checked; } })),
           h("td", {}, h("button", { class: "keep link", "aria-label": `Remove ${u.email}`, onclick: () => { draft.splice(i, 1); renderConfig(); toast(`${u.email} removed. Press Save to keep the change.`); } }, "Remove"))))
-          : [h("tr", {}, h("td", { colspan: 4, class: "empty" }, "No users yet. Add the work emails of the people who should see the dashboard."))])))),
-      h("div", { class: "row add-user" }, newEmail, roleSelect(newRole, (v) => { newRole = v; }, "Role for the new user"), h("button", { class: "keep", id: "cfgAdd", onclick: addUser }, "Add user"), h("button", { class: "primary", id: "cfgSave", onclick: saveAccess }, "Save access list")),
-      h("h4", {}, "Apply it to the private host"),
-      h("pre", { class: "cmd" }, "npm run access:apply -- --name <static-web-app> --resource-group <resource-group>"),
-      h("p", { class: "hint" }, "Uses your own Azure CLI sign-in (az login) to set the host's RFP_ACCESS app setting. Everyone else who signs in sees a no-access page.")),
-    h("section", { class: "card config-card" },
-      h("h2", {}, "Private host (company sign-in)"),
-      h("ol", { class: "steps" },
-        h("li", {}, "Create an Azure Static Web App (Standard plan, for custom roles) and a Microsoft Entra app registration for sign-in."),
-        h("li", {}, "In GitHub: add the secret AZURE_STATIC_WEB_APPS_API_TOKEN and the variable AAD_TENANT_ID. Every build then also deploys to the private host."),
-        h("li", {}, "On the Static Web App: set AAD_CLIENT_ID and AAD_CLIENT_SECRET, then apply the access list (above)."),
-        h("li", {}, "When the private host works, set the GitHub variable PUBLISH_PAGES to false to stop the public copy.")),
-      h("p", { class: "hint" }, "Full steps: docs/private-hosting.md. Creating the Azure and Entra resources needs your accounts, so this tool never does it for you.")),
-    h("section", { class: "card config-card", id: "cfgCrm" },
-      h("h2", {}, "Sales platform (MCP)"),
-      h("div", { class: "row" }, h("label", {}, "Platform ", h("select", { id: "cfgPlatform", class: "keep", onchange: async (e) => {
-        try { const r = await fetch("/api/crm", { method: "PUT", headers: { "X-RFP-Dashboard": "1", "content-type": "application/json" }, body: JSON.stringify({ platform: e.target.value }) }); const j = await r.json(); if (!r.ok) throw new Error(j.error); state.crm = { ...state.crm, platform: j.platform }; toast(`Sales platform: ${R().CRM_NAMES[j.platform]}`); renderConfig(); } catch (err) { toast(err.message, true); }
-      } }, ...R().CRM_PLATFORMS.map((p) => h("option", { value: p, selected: p === platform }, R().CRM_NAMES[p]))))),
-      h("ol", { class: "steps" },
+          : fixed.length ? [] : [h("tr", {}, h("td", { colspan: 4, class: "empty" }, "No users yet. Add the work emails of the people who should see the dashboard."))])))),
+    h("div", { class: "row add-user" }, newEmail, roleSelect(newRole, (v) => { newRole = v; }, "Role for the new user"), h("button", { class: "keep", id: "cfgAdd", onclick: addUser }, "Add user"), h("button", { class: "primary", id: "cfgSave", onclick: saveAccess }, "Save access list")));
+}
+
+function scheduleCard(settings, host, admin) {
+  const s = settings.schedule, days = host.days ?? {}, zones = [...new Set([...(host.timeZones ?? []), s.timeZone])];
+  const running = settings.running;
+  const summary = h("p", { id: "cfgScheduleText" }, s.enabled ? `${settings.text}. Next: ${settings.nextText ?? "not scheduled"}.` : "The scheduled sweep is off. Sweeps run only when someone presses Find RFPs or Run now.");
+  const runs = (settings.runs ?? []).length ? h("div", { class: "tablewrap" }, h("table", { class: "grid runs-table" },
+    h("thead", {}, h("tr", {}, ...["When", "Started by", "Opportunities", "High fit", "New", "Not read", "Time"].map((x) => h("th", {}, x)))),
+    h("tbody", {}, ...settings.runs.map((r) => h("tr", {}, h("td", {}, utc(r.at)), h("td", {}, r.trigger === "schedule" ? "schedule" : "an admin"),
+      ...(r.error ? [h("td", { colspan: 5, class: "hint err" }, `failed: ${r.error}`)] : [h("td", {}, String(r.found)), h("td", {}, String(r.high)), h("td", {}, String(r.added)), h("td", {}, String(r.gaps)), h("td", {}, `${r.seconds} s`)]))))))
+    : h("p", { class: "empty" }, "No scheduled sweep has run on this host yet.");
+  const busy = running ? h("p", { class: "notice", id: "cfgRunning" }, `A sweep is running (${running.label}, started ${utc(running.startedAt)}).`) : null;
+  if (!admin) return h("section", { class: "card config-card", id: "cfgSchedule" }, h("h2", {}, "Scheduled sweep"), summary, busy, runs, h("p", { class: "hint" }, "Only an admin can change the schedule."));
+  const on = h("input", { type: "checkbox", id: "cfgSchedOn", class: "keep", checked: s.enabled });
+  const daySel = h("select", { id: "cfgSchedDays", class: "keep", "aria-label": "Days" }, ...Object.entries(days).map(([k, v]) => h("option", { value: k, selected: k === s.days }, v)));
+  const time = h("input", { type: "time", id: "cfgSchedTime", class: "keep", value: s.time, "aria-label": "Time" });
+  const zone = h("select", { id: "cfgSchedZone", class: "keep", "aria-label": "Time zone" }, ...zones.map((z) => h("option", { value: z, selected: z === s.timeZone }, z)));
+  const width = h("select", { id: "cfgSchedWidth", class: "keep", "aria-label": "How wide" }, ...[[1, "Width 1: highest-yield"], [2, "Width 2: normal"], [3, "Width 3: everything"]].map(([v, t]) => h("option", { value: v, selected: v === s.width }, t)));
+  const save = async () => {
+    try {
+      const j = await cfgWrite("PUT", "/api/settings/schedule", { enabled: on.checked, days: daySel.value, time: time.value, timeZone: zone.value, width: Number(width.value) });
+      toast(j.schedule.enabled ? `Schedule saved: ${j.text}. Next: ${j.nextText}.` : "Schedule saved: the scheduled sweep is off.");
+      renderConfig();
+    } catch (e) { toast(e.message, true); }
+  };
+  const runNow = async (e) => {
+    e.currentTarget.disabled = true;
+    try {
+      await cfgWrite("POST", "/api/settings/run-now");
+      toast("Sweep started on the host. It reads every portal, so it takes a few minutes; the pipeline updates when it finishes.");
+    } catch (err) { toast(err.message, true); }
+    renderConfig();
+  };
+  return h("section", { class: "card config-card", id: "cfgSchedule" },
+    h("h2", {}, "Scheduled sweep"),
+    summary,
+    h("p", { class: "hint" }, "The host sweeps every portal on this schedule and searches with your company profile's terms, so the pipeline is fresh when people arrive."),
+    h("div", { class: "row schedule-row" },
+      h("label", { class: "inline" }, on, " On"), daySel, h("label", { class: "inline" }, "at ", time), zone, width,
+      h("button", { class: "primary", id: "cfgSchedSave", onclick: save }, "Save schedule"),
+      h("button", { class: "keep", id: "cfgRunNow", disabled: !!running, onclick: runNow }, running ? "Sweep running…" : "Run now")),
+    busy, h("h4", {}, "Recent sweeps"), runs);
+}
+
+function activityCard(audit) {
+  const entries = audit?.entries ?? [];
+  return h("section", { class: "card config-card", id: "cfgActivity" },
+    h("h2", {}, "Activity and backup"),
+    h("div", { class: "row" }, h("button", { class: "keep", id: "cfgBackup", onclick: async (ev) => {
+      const btn = ev.currentTarget;
+      btn.disabled = true;
+      try {
+        const res = await fetch("/api/backup.zip", { cache: "no-store" });
+        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
+        const name = /filename="([^"]+)"/.exec(res.headers.get("content-disposition") || "")?.[1] || "rfp-sweep-backup.zip";
+        const a = h("a", { href: URL.createObjectURL(await res.blob()), download: name });
+        document.body.append(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+        toast(`Backup downloaded: ${name}. Keep it somewhere safe: it holds the access list.`);
+      } catch (e) { toast(e.message, true); }
+      btn.disabled = false;
+    } }, "Download a backup (.zip)"),
+      h("span", { class: "hint" }, "Users, settings, the pipeline and the response library, as one file.")),
+    h("h4", {}, "Configuration changes"),
+    entries.length ? h("ul", { class: "plain activity" }, ...entries.slice(0, 20).map((e) => h("li", {}, h("span", { class: "hint" }, `${utc(e.at)}, ${e.by}: `), e.what)))
+      : h("p", { class: "empty" }, "No changes yet."));
+}
+
+function salesPlatformCard(crm, host) {
+  const internal = host.mode === "internal", canEdit = host.canConfigure;
+  const platform = crm.platform ?? "salesforce", pname = R().CRM_NAMES[platform];
+  const links = Object.entries(crm.links ?? {});
+  const titleOf = (id) => state.allLedger?.findings.find((f) => f.id === id)?.title ?? id;
+  return h("section", { class: "card config-card", id: "cfgCrm" },
+    h("h2", {}, "Sales platform"),
+    h("div", { class: "row" }, h("label", {}, "Platform ", h("select", { id: "cfgPlatform", class: "keep", disabled: !canEdit, onchange: async (e) => {
+      try { const j = await cfgWrite("PUT", "/api/crm", { platform: e.target.value }); state.crm = { ...state.crm, platform: j.platform }; toast(`Sales platform: ${R().CRM_NAMES[j.platform]}`); renderConfig(); } catch (err) { toast(err.message, true); }
+    } }, ...R().CRM_PLATFORMS.map((p) => h("option", { value: p, selected: p === platform }, R().CRM_NAMES[p]))))),
+    internal
+      ? h("p", {}, `Open an RFP and use its ${pname}… panel: it shows the opportunity fields to enter, and records the ${pname} record you created. Creating records through Claude (MCP) runs from a local copy of this repository: docs/sales-platform-mcp.md.`)
+      : h("ol", { class: "steps" },
         h("li", {}, "Claude Code opened in this folder loads the RFP Sweep and Drafter MCP server, named rfp-sweeper in .mcp.json. Or add it to Claude yourself: command node, argument scripts/mcp-server.mjs."),
         h("li", {}, `Connect your ${pname} connector in Claude.`),
         h("li", {}, `Ask Claude, e.g. "Create a ${pname} opportunity for the best-fit RFP closing this month". It prepares the fields; you confirm; your ${pname} connector creates the record; the link is recorded here.`)),
-      h("p", { class: "hint" }, `Nothing is created in ${pname} without your confirmation, and this tool never calls ${pname} itself. Links stay in store/crm.json on this machine and never appear on a published page.`),
-      h("h4", {}, `Linked records (${links.length})`),
-      links.length ? h("div", { class: "tablewrap" }, h("table", { class: "grid" }, h("thead", {}, h("tr", {}, ...["Opportunity", "Platform", "Record", "Linked", ""].map((x) => h("th", {}, x)))),
-        h("tbody", {}, ...links.map(([id, l]) => h("tr", {}, h("td", {}, titleOf(id)), h("td", {}, R().CRM_NAMES[l.platform] ?? l.platform), h("td", {}, l.url ? h("a", { href: l.url, target: "_blank", rel: "noopener noreferrer" }, l.recordId) : l.recordId), h("td", {}, String(l.linkedAt ?? "").slice(0, 10)),
-          h("td", {}, h("button", { class: "keep link", onclick: () => unlinkCrm(id) }, "Unlink")))))))
-        : h("p", { class: "empty" }, "None yet.")));
+    h("p", { class: "hint" }, `Nothing is created in ${pname} without your confirmation, and this tool never calls ${pname} itself. Links stay on ${internal ? "this host" : "this machine"} (store/crm.json) and never appear on a published page.${internal && !canEdit ? " Only an admin can change the platform." : ""}`),
+    h("h4", {}, `Linked records (${links.length})`),
+    links.length ? h("div", { class: "tablewrap" }, h("table", { class: "grid" }, h("thead", {}, h("tr", {}, ...["Opportunity", "Platform", "Record", "Linked", ""].map((x) => h("th", {}, x)))),
+      h("tbody", {}, ...links.map(([id, l]) => h("tr", {}, h("td", {}, titleOf(id)), h("td", {}, R().CRM_NAMES[l.platform] ?? l.platform), h("td", {}, l.url ? h("a", { href: l.url, target: "_blank", rel: "noopener noreferrer" }, l.recordId) : l.recordId), h("td", {}, String(l.linkedAt ?? "").slice(0, 10)),
+        h("td", {}, h("button", { class: "keep link", onclick: () => unlinkCrm(id) }, "Unlink")))))))
+      : h("p", { class: "empty" }, "None yet."));
 }
 
 async function unlinkCrm(id, ws) {
@@ -1764,7 +1924,9 @@ function crmPanel(ws) {
   return h("div", { class: "card crm-panel" },
     h("div", { class: "explain-head" }, h("h3", {}, `${pname} opportunity`), h("button", { class: "keep link", onclick: () => { ws.crmOpen = false; renderWorkspace(ws); } }, "Close")),
     link ? h("p", { class: "notice ok-note" }, `Linked to ${pname} record `, link.url ? h("a", { href: link.url, target: "_blank", rel: "noopener noreferrer" }, link.recordId) : link.recordId, ` on ${String(link.linkedAt ?? "").slice(0, 10)}. `, h("button", { class: "keep link", onclick: () => unlinkCrm(f.id, ws) }, "Unlink")) : null,
-    h("p", {}, `Ask Claude: "Create a ${pname} opportunity for RFP ${f.id}". It uses the RFP Sweep and Drafter MCP server and your ${pname} connector, shows you these fields and creates nothing until you confirm.`),
+    h("p", {}, state.host?.mode === "internal"
+      ? `Enter these fields as a new ${pname} opportunity, then link the record here so the team can see it.`
+      : `Ask Claude: "Create a ${pname} opportunity for RFP ${f.id}". It uses the RFP Sweep and Drafter MCP server and your ${pname} connector, shows you these fields and creates nothing until you confirm.`),
     h("table", { class: "facts" }, h("tbody", {}, ...Object.entries(fields).filter(([, v]) => v != null && v !== "").map(([k, v]) => h("tr", {}, h("th", {}, k), h("td", { class: "crm-value" }, String(v)))))),
     (payload.decide ?? []).length ? h("ul", { class: "plain hint" }, ...payload.decide.map((d) => h("li", {}, d))) : null,
     link ? null : h("div", { class: "row" }, h("span", { class: "hint" }, "Created it already? Link it:"), recordId, url, h("button", { class: "keep", onclick: async () => {
