@@ -77,11 +77,14 @@ App Service adds `MICROSOFT_PROVIDER_AUTHENTICATION_SECRET` (the sign-in secret)
 
 [`infra/azure-internal-host.sh`](../infra/azure-internal-host.sh) creates all of the
 above. It prints every command first, and changes nothing until you add `--apply`.
+Upload the package zip to Cloud Shell (or clone the repository), unzip it, and run the
+script from the app's folder. The image is built in your registry from those files, so
+nothing needs to be fetched from GitHub.
 
 ```bash
-git clone https://github.com/Natansh002/RFP-Sweep-Drafter.git && cd RFP-Sweep-Drafter
-ACR=<registry> APP=<web-app> ADMINS=first.admin@yourcompany.com ./infra/azure-internal-host.sh
-ACR=<registry> APP=<web-app> ADMINS=first.admin@yourcompany.com ./infra/azure-internal-host.sh --apply
+unzip RFP-Sweep-and-Drafter-internal-hosting-*.zip && cd RFP-Sweep-and-Drafter-internal-hosting-*/source
+ACR=<registry> APP=<web-app> ADMINS=first.admin@yourcompany.com bash infra/azure-internal-host.sh
+ACR=<registry> APP=<web-app> ADMINS=first.admin@yourcompany.com bash infra/azure-internal-host.sh --apply
 ```
 
 Optional: `ACCESS_GROUP=<group object id>` makes the enterprise app *assignment
@@ -91,8 +94,9 @@ The sign-in secret goes straight into the app setting and is never printed.
 
 ## Option B: the Azure portal
 
-1. **Container registry** → Create (Basic). In Cloud Shell, build the image:
-   `az acr build --registry <registry> --image rfp-sweep-drafter:latest https://github.com/Natansh002/RFP-Sweep-Drafter.git#main`
+1. **Container registry** → Create (Basic). In Cloud Shell, from the app's folder
+   (the package's `source/`, or a clone), build the image:
+   `az acr build --registry <registry> --image rfp-sweep-drafter:latest --build-arg RFP_COMMIT=$(cat COMMIT) .`
 2. **App Service plan**: Linux, B2.
 3. **Web App**: Publish *Container*, the plan above, image from the registry. Then:
    - *Identity*: system-assigned **On**. On the registry, give it the **AcrPull** role.
@@ -134,7 +138,8 @@ Each commit to `main` is built and checked by the **internal-host** workflow
 checks that everyone is refused when sign-in is off, and checks that the browser works.
 To roll a new version out:
 
-- **By hand**: run the `az acr build` command above again, then restart the web app.
+- **By hand**: from the new package (or an updated clone), run the `az acr build` command
+  above again, then restart the web app.
 - **Automatically (optional)**: create a Microsoft Entra app registration for deployment,
   with a federated credential for this repository. The subject is
   `repo:<owner>/<repo>:environment:internal-host`. Give it *Contributor* on the registry
@@ -150,8 +155,7 @@ When the internal host works:
 
 1. GitHub → Settings → Secrets and variables → Actions → Variables: set **`PUBLISH_PAGES`** to `false`.
 2. GitHub → Settings → Pages → **Unpublish site**.
-3. Consider making the repository private. `az acr build` from the repository URL then
-   needs a read-only token, or build from a clone.
+3. Consider making the repository private. Builds from the package or a clone are not affected.
 
 ## Running it
 

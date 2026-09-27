@@ -5,8 +5,10 @@
 # create resources in the subscription and app registrations in Microsoft Entra.
 # It prints every step first; nothing changes until you add --apply.
 #
-#   ACR=<registry> APP=<web-app> ADMINS=first.admin@yourcompany.com ./infra/azure-internal-host.sh
-#   ACR=<registry> APP=<web-app> ADMINS=first.admin@yourcompany.com ./infra/azure-internal-host.sh --apply
+#   ACR=<registry> APP=<web-app> ADMINS=first.admin@yourcompany.com bash infra/azure-internal-host.sh
+#   ACR=<registry> APP=<web-app> ADMINS=first.admin@yourcompany.com bash infra/azure-internal-host.sh --apply
+#
+# Run it from the unzipped package (or a clone): the image is built from those files.
 #
 # Settings (environment variables), with defaults:
 #   ACR           container registry name, letters and digits, globally unique   (required)
@@ -18,8 +20,9 @@
 #   PLAN          App Service plan                     asp-rfp-sweep
 #   SKU           plan size (Chromium needs memory)    B2
 #   TIMEZONE      time zone of the sweep schedule      America/Toronto
-#   SOURCE        Git repository to build from         https://github.com/Natansh002/RFP-Sweep-Drafter.git
-#   BRANCH        branch to build                      main
+#   SOURCE        what to build the image from         this folder (the package or clone the
+#                                                      script is in); or a Git URL
+#   BRANCH        branch, when SOURCE is a Git URL     main
 #   ACCESS_GROUP  object ID of a Microsoft Entra security group; when set, only its members
 #                 can sign in at all (the access list then decides who gets in)   (optional)
 #
@@ -38,7 +41,8 @@ LOCATION="${LOCATION:-canadacentral}"
 PLAN="${PLAN:-asp-rfp-sweep}"
 SKU="${SKU:-B2}"
 TIMEZONE="${TIMEZONE:-America/Toronto}"
-SOURCE="${SOURCE:-https://github.com/Natansh002/RFP-Sweep-Drafter.git}"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SOURCE="${SOURCE:-$HERE}"
 BRANCH="${BRANCH:-main}"
 ACR="${ACR:-}"
 APP="${APP:-}"
@@ -77,13 +81,22 @@ fi
 
 step "Your subscription and Microsoft Entra tenant"
 capture TENANT_ID az account show --query tenantId -o tsv
-capture COMMIT git ls-remote "$SOURCE" "refs/heads/$BRANCH"
-COMMIT="${COMMIT%%[[:space:]]*}"
+if [ -d "$SOURCE" ]; then
+  # The unzipped package carries its commit in a COMMIT file; a clone knows its own.
+  [ -f "$SOURCE/Dockerfile" ] || fail "no Dockerfile in $SOURCE: run the script from the unzipped package, or set SOURCE"
+  COMMIT="$(cat "$SOURCE/COMMIT" 2>/dev/null || git -C "$SOURCE" rev-parse HEAD 2>/dev/null || true)"
+  CONTEXT="$SOURCE"
+  echo "  building from the folder $SOURCE (commit ${COMMIT:-unknown})"
+else
+  capture COMMIT git ls-remote "$SOURCE" "refs/heads/$BRANCH"
+  COMMIT="${COMMIT%%[[:space:]]*}"
+  CONTEXT="$SOURCE#$BRANCH"
+fi
 
-step "Resource group and container registry; build the image from the repository"
+step "Resource group and container registry; build the image (in Azure, no Docker needed)"
 run az group create --name "$RG" --location "$LOCATION" --output none
 run az acr create --name "$ACR" --resource-group "$RG" --sku Basic --admin-enabled false --output none
-run az acr build --registry "$ACR" --image "$IMAGE:latest" --build-arg "RFP_COMMIT=$COMMIT" "$SOURCE#$BRANCH"
+run az acr build --registry "$ACR" --image "$IMAGE:latest" --build-arg "RFP_COMMIT=$COMMIT" "$CONTEXT"
 
 step "App Service plan (Linux, one instance) and the web app"
 run az appservice plan create --name "$PLAN" --resource-group "$RG" --is-linux --sku "$SKU" --number-of-workers 1 --output none

@@ -80,6 +80,11 @@ const principal = (email, { tenant = TENANT, idp = "aad", claimType = "preferred
 {
   const v = H.appVersion(ROOT, { RFP_COMMIT: "abcdef1234567890" });
   a("version: package version and short commit, no build date or time", v.commit === "abcdef1" && v.text === `${JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8")).version} (abcdef1)`);
+  const pkg = fs.mkdtempSync(path.join(os.tmpdir(), "rfp-pkg-"));
+  fs.writeFileSync(path.join(pkg, "package.json"), JSON.stringify({ version: "9.8.7" }));
+  fs.writeFileSync(path.join(pkg, "COMMIT"), "0123456789abcdef0123456789abcdef01234567\n");
+  a("version: a package's COMMIT file names the commit", H.appVersion(pkg, {}).text === "9.8.7 (0123456)");
+  fs.rmSync(pkg, { recursive: true, force: true });
   a("settings: listed without secrets", H.hostSettings({ RFP_ADMINS: "a@x.org,b@x.org" }).find((x) => x.name === "RFP_ADMINS").value === "2 set" && !H.hostSettings({}).some((x) => /SECRET/.test(x.name)));
 }
 
