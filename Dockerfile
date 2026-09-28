@@ -2,7 +2,9 @@
 #
 # Playwright's image: Node plus a headless Chromium, so the portals that build their
 # listings with JavaScript are read on the host too. The tag matches the playwright
-# version in package-lock.json; change both together.
+# version in package-lock.json; change both together. The digest pins the exact image, so
+# a re-tagged image can never slip in: when the tag changes, take its new digest with
+#   curl -sI -H "Accept: application/vnd.oci.image.index.v1+json" https://mcr.microsoft.com/v2/playwright/manifests/<tag>
 #
 #   docker build --build-arg RFP_COMMIT=$(git rev-parse HEAD) -t rfp-sweep-drafter .
 #   az acr build --registry <acr> --image rfp-sweep-drafter:latest --build-arg RFP_COMMIT=<sha> .
@@ -11,7 +13,7 @@
 # needs it. The browser opens only the configured public procurement portals (links a
 # person pastes are read as plain pages), every request it makes goes through
 # lib/guard.mjs, and the server's own requests reach public addresses only (lib/netguard.mjs).
-FROM mcr.microsoft.com/playwright:v1.63.0-noble
+FROM mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27
 
 ARG RFP_COMMIT=""
 ENV NODE_ENV=production \

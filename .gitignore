@@ -18,3 +18,11 @@ library/private/
 
 # Built by scripts/package-saas-ops.mjs (npm run package:saas-ops)
 dist/
+
+# Keys, certificates and publish profiles never belong in git (scripts/check-secrets.mjs checks too).
+*.pem
+*.key
+*.pfx
+*.p12
+*.publishsettings
+*.PublishSettings

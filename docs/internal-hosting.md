@@ -155,6 +155,9 @@ To roll a new version out:
   secrets `AZURE_CLIENT_ID`, `AZURE_TENANT_ID` and `AZURE_SUBSCRIPTION_ID`. Each push
   to `main` then builds the image in the registry and points the web app at it. The
   deploy fails if the site answers anyone without sign-in. No password is stored.
+  On a private repository without GitHub Pro or Team, GitHub environments are not
+  available: remove the `environment:` line from the deploy job and use the subject
+  `repo:<owner>/<repo>:ref:refs/heads/main` instead.
 
 ## Switch off the public copy
 

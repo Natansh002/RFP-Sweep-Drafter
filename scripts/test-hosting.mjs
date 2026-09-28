@@ -19,6 +19,7 @@ import { ROOT } from "../lib/config.mjs";
 import { saveLedger, writeStore } from "../lib/ledger.mjs";
 import * as H from "../lib/hosting.mjs";
 import { ipBlocked, makeGuardedLookup, guardedLookup, guardedFetch } from "../lib/netguard.mjs";
+import { findSecrets, SECRET_FILES } from "../lib/secrets.mjs";
 
 let fails = 0, passes = 0;
 const a = (name, cond) => { if (cond) passes++; else { fails++; console.log(`FAIL: ${name}`); } };
@@ -106,6 +107,17 @@ await new Promise((res) => makeGuardedLookup((h, o, cb) => cb(null, [{ address: 
   local.close();
 }
 
+// ------------------------------------------------------------------ the secret check
+{
+  // Built at runtime, so this file never holds anything that looks like a real secret.
+  const fakes = { "GitHub token": "gh" + "p_" + "A1b2C3d4".repeat(5), "AWS access key": "AK" + "IA" + "ABCDEFGHIJKLMNOP", "Private key": "-----BEGIN " + "OPENSSH PRIVATE KEY-----",
+    "Microsoft Entra client secret": "Abc" + "8Q~" + "x".repeat(32), "Azure storage key or connection string": "Account" + "Key=" + "a".repeat(86) + "==", "Azure publish profile password": "userPWD=\"" + "p".repeat(40) + "\"" };
+  for (const [kind, v] of Object.entries(fakes)) a(`secrets: finds a ${kind}`, findSecrets("notes.txt", `line one\nconfig: ${v}`).some((h) => h.kind === kind && h.line === 2));
+  a("secrets: lockfile hashes and ordinary text are not secrets", findSecrets("package-lock.json", '"integrity": "sha512-Abc8Q~short", "resolved": "https://registry.npmjs.org/x"').length === 0);
+  a("secrets: key, certificate, publish-profile and .env files are refused by name", [".env", "config/.env.production", "certs/site.pem", "deploy.PublishSettings", "id_ed25519", "web.pfx"].every((f) => SECRET_FILES.test(f)));
+  a("secrets: examples and ordinary files are fine", ![".env.example", "lib/key.mjs", "docs/env.md", "keys.json"].some((f) => findSecrets(f, "").length));
+}
+
 // ------------------------------------------------------------------ the server
 const freePort = () => new Promise((res) => { const s = net.createServer().listen(0, "127.0.0.1", () => { const p = s.address().port; s.close(() => res(p)); }); });
 async function startHost(env, seed = () => {}) {
@@ -156,6 +168,7 @@ try {
   a("host: another sign-in provider is refused", r.status === 403);
   r = await call("GET", "/style.css");
   a("host: the stylesheet loads for the no-access page", r.status === 200);
+  a("host: every answer carries the security headers", ["content-security-policy", "x-content-type-options", "referrer-policy", "x-frame-options", "cross-origin-opener-policy", "cross-origin-resource-policy", "permissions-policy", "strict-transport-security"].every((h) => r.headers.get(h)) && r.headers.get("x-frame-options") === "DENY");
 
   r = await call("GET", "/api/host", { as: ADMIN });
   a("host: RFP_ADMINS get in as admin RFP Managers", r.status === 200 && r.body.user.email === ADMIN && r.body.user.role === "RFP Manager" && r.body.user.admin === true && r.body.canConfigure === true);

@@ -96,6 +96,10 @@ function send(res, status, body, headers = {}) {
     "x-content-type-options": "nosniff",
     "referrer-policy": "no-referrer",
     "cache-control": "no-store",
+    "x-frame-options": "DENY",
+    "cross-origin-opener-policy": "same-origin",
+    "cross-origin-resource-policy": "same-origin",
+    "permissions-policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
     ...(INTERNAL ? { "strict-transport-security": "max-age=31536000" } : {}),
     ...headers,
   });
