@@ -19,9 +19,10 @@ Three ways to run it:
   admins manage the access list on its Configuration page. Set-up for your operations
   team: [docs/internal-hosting.md](docs/internal-hosting.md).
 - **On your machine:** `npm run dashboard`, a one-person copy on 127.0.0.1.
-- **Public copy (GitHub Pages):** off while the repository is private, because GitHub's free
-  plan has no Pages for private repositories. The pages workflow publishes it again by
-  itself if Pages becomes available, unless the variable `PUBLISH_PAGES` is `false`.
+- **Public copy:** **https://natansh002.github.io/RFP-Sweep-Drafter/** (public procurement
+  data only, refreshed by GitHub Actions). It is published only while GitHub Pages is on
+  and the variable `PUBLISH_PAGES` is not `false`. Switching Pages off, or making the
+  repository private on GitHub's free plan, takes it down without failing any runs.
 
 | Step | What it does | Agent in the spec |
 |---|---|---|
@@ -231,8 +232,6 @@ docs/                     internal hosting, sales platform (MCP), adding a tenan
 ```
 
 ## Published site (GitHub Pages)
-
-Currently off: the repository is private. What follows applies whenever Pages is available.
 
 `.github/workflows/pages.yml` publishes a read-only dashboard, the Excel workbook and
 the deadline calendar to **https://natansh002.github.io/RFP-Sweep-Drafter/**, the same
