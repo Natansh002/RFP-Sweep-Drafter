@@ -156,6 +156,9 @@ When the internal host works:
 1. GitHub → Settings → Secrets and variables → Actions → Variables: set **`PUBLISH_PAGES`** to `false`.
 2. GitHub → Settings → Pages → **Unpublish site**.
 3. Consider making the repository private. Builds from the package or a clone are not affected.
+   On GitHub's free plan a private repository has no Pages, so this also takes the public copy
+   down. The pages workflow then skips publishing (and its scheduled runs do nothing), while
+   pushes still run every test.
 
 ## Running it
 
