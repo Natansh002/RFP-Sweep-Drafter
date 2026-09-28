@@ -73,6 +73,13 @@ App settings (no secrets among them):
 App Service adds `MICROSOFT_PROVIDER_AUTHENTICATION_SECRET` (the sign-in secret) and
 `WEBSITE_AUTH_ENABLED` itself. The app never reads the secret.
 
+## The package for operations
+
+`npm run package:saas-ops` builds `dist/RFP-Sweep-and-Drafter-internal-hosting-<version>.zip`
+from the committed repository: the hand-off in [`saas-ops/`](../saas-ops/) (request, app
+settings, ticket text, screenshots) at the top, and the whole app in `source/`. Every push
+to `main` also builds it: Actions → internal-host → the run → Artifacts → `saas-ops-package`.
+
 ## Option A: the script, in Azure Cloud Shell
 
 [`infra/azure-internal-host.sh`](../infra/azure-internal-host.sh) creates all of the

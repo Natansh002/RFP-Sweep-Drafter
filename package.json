@@ -1,6 +1,6 @@
 {
   "name": "ionic-rfp-sweeper",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "description": "RFP Sweep and Drafter: config-driven RFP sweep and response drafting for any Ionic operating company. Findings go to an Excel workbook and a local dashboard with assignees and action items. No Jira, no Confluence, no links to internal tools.",
   "type": "module",
@@ -24,7 +24,8 @@
     "analyze": "node scripts/analyze.mjs",
     "learn": "node scripts/learn.mjs",
     "test:e2e": "node scripts/test-e2e.mjs",
-    "mcp": "node scripts/mcp-server.mjs"
+    "mcp": "node scripts/mcp-server.mjs",
+    "package:saas-ops": "node scripts/package-saas-ops.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.1",

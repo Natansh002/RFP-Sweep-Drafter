@@ -1,8 +1,10 @@
 # The internal host's container image (docs/internal-hosting.md).
 #
-# image:  on every push and pull request, build the image and check it the way App
-#         Service will run it: it starts, sends people to Microsoft sign-in, refuses
-#         everyone when sign-in is off, and its headless browser works.
+# image:   on every push and pull request, build the image and check it the way App
+#          Service will run it: it starts, sends people to Microsoft sign-in, refuses
+#          everyone when sign-in is off, and its headless browser works.
+# package: the zip for operations (npm run package:saas-ops), kept as the run's
+#          "saas-ops-package" artifact, so the package always matches the repository.
 # deploy: optional. Once operations have created the host and set the repository
 #         variables AZURE_WEBAPP_NAME, AZURE_RESOURCE_GROUP and AZURE_CONTAINER_REGISTRY
 #         and the secrets AZURE_CLIENT_ID, AZURE_TENANT_ID and AZURE_SUBSCRIPTION_ID
@@ -25,6 +27,29 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - run: npm ci --ignore-scripts
+
+      - name: Build the package for operations
+        run: npm run package:saas-ops
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: saas-ops-package
+          path: dist/*.zip
+          if-no-files-found: error
+          retention-days: 90
+
   image:
     runs-on: ubuntu-latest
     timeout-minutes: 30

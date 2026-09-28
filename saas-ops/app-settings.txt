@@ -1,0 +1,17 @@
+# RFP Sweep and Drafter: App Service app settings for the internal host.
+# No secrets here. Fill in the two <...> values.
+
+RFP_MODE=internal
+RFP_ADMINS=<first admin work email(s), comma-separated>
+RFP_TENANT_ID=<your Microsoft Entra directory (tenant) ID>
+RFP_DATA_DIR=/home/data/rfp-sweep
+RFP_TIMEZONE=America/Toronto
+WEBSITES_ENABLE_APP_SERVICE_STORAGE=true
+WEBSITES_PORT=8080
+
+# Optional: solicitation documents read per industry, per sweep
+RFP_DOCUMENTS_PER_RUN=20
+
+# App Service sets these itself; do not set them by hand:
+#   MICROSOFT_PROVIDER_AUTHENTICATION_SECRET  (the sign-in secret, created with App Service authentication)
+#   WEBSITE_AUTH_ENABLED                      (tells the app sign-in is on; without it the app refuses everyone)

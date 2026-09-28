@@ -1,0 +1,31 @@
+Jira ticket for operations (SaaS Ops). Paste it, fill in the <...> values, and attach the package zip.
+
+Project: SaaS Operations (SO)    Type: Task    Priority: Medium
+
+Summary:
+Internal - Host RFP Sweep and Drafter - Azure App Service with Microsoft Entra sign-in
+
+Description:
+Customer: Internal tool (no customer, no customer data)
+Requested by: <your name>
+Needed by: please advise an ETA
+
+Request:
+Host the RFP Sweep and Drafter web app for the RFP / pre-sales team on our Azure, behind Microsoft Entra sign-in (our tenant only), replacing the public GitHub Pages copy. Everything is in the attached RFP-Sweep-and-Drafter-internal-hosting-<version>.zip. Start with README-FIRST.md. No GitHub access needed.
+
+Configuration:
+- Resource group (e.g. rg-rfp-sweep), Canada Central
+- Azure Container Registry (Basic); build the image from the package's source/ folder with az acr build
+- App Service plan: Linux, B2, one instance (no scale-out)
+- Web App for Containers: managed identity with AcrPull, HTTPS only, TLS 1.2, FTP off, Always On, health check /healthz
+- App Service authentication: Microsoft, current tenant only, require authentication (302 to sign-in). Optional: assignment required with an RFP team security group
+- App settings: app-settings.txt (no secrets). First admin (RFP_ADMINS): <work email>
+- Network: outbound HTTPS to the public internet only; no VNet or internal network access
+- source/infra/azure-internal-host.sh (Azure Cloud Shell) creates all of this: dry run by default, --apply to create
+
+Acceptance criteria:
+- Signed-out visitors are sent to Microsoft sign-in
+- The first admin signs in and Configuration > This host shows the checks green
+- A colleague not on the access list sees "You are signed in, but not on the access list"
+- Run now completes and appears under Recent sweeps
+- App URL and registry name sent back; reminder set to renew the sign-in secret (1 year)

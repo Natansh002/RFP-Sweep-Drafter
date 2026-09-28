@@ -15,3 +15,6 @@ data/private/
 site/
 # Learned, company-confidential answers: local only, never committed or published.
 library/private/
+
+# Built by scripts/package-saas-ops.mjs (npm run package:saas-ops)
+dist/

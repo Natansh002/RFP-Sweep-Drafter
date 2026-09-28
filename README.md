@@ -17,7 +17,9 @@ Three ways to run it:
 - **For your team: the internal host.** The whole app on your company's Azure App Service,
   behind Microsoft sign-in. It holds one shared pipeline and sweeps on a schedule, and
   admins manage the access list on its Configuration page. Set-up for your operations
-  team: [docs/internal-hosting.md](docs/internal-hosting.md).
+  team: [docs/internal-hosting.md](docs/internal-hosting.md). The package to hand them
+  (source, script, runbook, settings, ticket text) is built with `npm run package:saas-ops`
+  from [saas-ops/](saas-ops/), and by every push (the internal-host run's artifact).
 - **On your machine:** `npm run dashboard`, a one-person copy on 127.0.0.1.
 - **Public copy:** **https://natansh002.github.io/RFP-Sweep-Drafter/** (public procurement
   data only, refreshed by GitHub Actions). It is published only while GitHub Pages is on
@@ -228,6 +230,7 @@ n8n/                      generated workflows (optional scheduler)
 store/  output/           ledger and workbooks (gitignored)
 Dockerfile                the internal host's image (Node + headless Chromium)
 infra/                    Azure Cloud Shell script that creates the internal host
+saas-ops/                 the hand-off for operations: request, app settings, ticket text, screenshots
 docs/                     internal hosting, sales platform (MCP), adding a tenant
 ```
 
